@@ -90,3 +90,94 @@ def value_range(x):
 	if type(x) is not torch.Tensor:
 		return None
 	return [torch.min(x).detach().cpu().numpy(), torch.max(x).detach().cpu().numpy()]
+
+
+
+####################OTHERS
+def grid_to_triangular_mesh(grid):
+	"""
+    Transform a quad grid into a triangular mesh.
+
+    Parameters:
+    - grid (torch.Tensor): Input tensor of shape (bs, H, W, 3), representing 3D vertex coordinates.
+
+    Returns:
+    - verts (torch.Tensor): Tensor of shape (bs, V, 3), where V = H * W.
+    - faces (torch.Tensor): Tensor of shape (F, 3), where F = (H - 1) * (W - 1) * 2.
+      The faces are the same for each mesh in the batch.
+    """
+	bs, H, W, C = grid.shape
+	assert C == 3, "Input grid must have 3 channels (x, y, z)"
+
+	# Reshape grid into vertices for each mesh in the batch
+	verts = grid.reshape(bs, H * W, 3)  # (bs, H*W, 3)
+
+	# Generate face indices for a single mesh of size (H, W)
+	# Create a grid of indices for the top-left corner of each quad
+	i = torch.arange(H - 1)
+	j = torch.arange(W - 1)
+	ii, jj = torch.meshgrid(i, j, indexing="ij")  # shape: (H-1, W-1)
+
+	# Compute indices for the four corners of each quad
+	v0 = ii * W + jj  # top-left corner
+	v1 = v0 + 1  # top-right corner
+	v2 = v0 + W  # bottom-left corner
+	v3 = v2 + 1  # bottom-right corner
+
+	# Form two triangles for each quad:
+	# First triangle: (v0, v2, v1)
+	tri1 = torch.stack([v0, v2, v1], dim=-1).reshape(-1, 3)
+	# Second triangle: (v1, v2, v3)
+	tri2 = torch.stack([v1, v2, v3], dim=-1).reshape(-1, 3)
+
+	# Concatenate both triangle sets to form the full face tensor
+	faces = torch.cat([tri1, tri2], dim=0)  # (F, 3)
+
+	return verts, faces
+
+
+import numpy as np
+
+def grid_to_trimesh_faces(num_rows, num_cols):
+    """
+    Generates the triangle face indices required to convert a quad mesh into a trimesh based on the resolution of the quad mesh (number of rows and columns).
+    Vertex indices are assumed to be arranged from right to left per row, and from top to bottom incrementally.
+
+    Parameters:
+      num_rows: int, the number of rows in the quad mesh
+      num_cols: int, the number of columns in the quad mesh
+
+    Returns:
+      faces: numpy array, shape ((num_rows-1)*(num_cols-1)*2, 3), where each row represents the three vertex indices of a triangle.
+    """
+    faces = []
+    for r in range(num_rows - 1):
+        for c in range(num_cols - 1):
+            # Calculate the indices of the four vertices of the current quad:
+            v_tr = r * num_cols + c  # Top row, right vertex
+            v_tl = r * num_cols + (c + 1)  # Top row, left vertex
+            v_br = (r + 1) * num_cols + c  # Bottom row, right vertex
+            v_bl = (r + 1) * num_cols + (c + 1)  # Bottom row, left vertex
+
+            # Split the quad into two triangles
+            faces.append([v_tr, v_br, v_bl])  # First triangle
+            faces.append([v_tr, v_bl, v_tl])  # Second triangle
+    return np.array(faces)
+
+
+
+
+if __name__=='__main__':
+	# test grid_to_triangular_mesh
+	batch_size = 2
+	height = 4
+	width = 4
+	grid = torch.randn(batch_size, height, width, 3)
+	verts, faces1 = grid_to_triangular_mesh(grid)
+	print("verts:", verts.shape)
+	print("faces:", faces1.shape)
+	# test grid_to_trimesh_faces
+	num_rows = 4
+	num_cols = 4
+	faces2 = grid_to_trimesh_faces(num_rows, num_cols)
+	print("faces:", faces2.shape)

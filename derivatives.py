@@ -1,17 +1,17 @@
 import torch
 import torch.nn.functional as F
 import math
-from get_param import params
+from get_param2 import params, toCuda, toCpu
 
-def toCuda(x):
-	if type(x) is tuple:
-		return [xi.cuda() if params.cuda else xi for xi in x]
-	return x.cuda() if params.cuda else x
-
-def toCpu(x):
-	if type(x) is tuple:
-		return [xi.detach().cpu() for xi in x]
-	return x.detach().cpu()
+# def toCuda(x):
+# 	if type(x) is tuple:
+# 		return [xi.cuda() if params.cuda else xi for xi in x]
+# 	return x.cuda() if params.cuda else x
+#
+# def toCpu(x):
+# 	if type(x) is tuple:
+# 		return [xi.detach().cpu() for xi in x]
+# 	return x.detach().cpu()
 
 
 # First order derivatives (d/dx)

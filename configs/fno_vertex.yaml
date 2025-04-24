@@ -1,0 +1,344 @@
+default: &DEFAULT
+  name: 'fno_base'
+  net: &DEFAULT_NET
+    name: 'FNOVertex'
+    n_modes_height: 16                    # try smaller
+    n_modes_width: 16
+    hidden_channels: 128                  # try different
+    in_channels: 3
+    out_channels: 1
+    projection_channels: 256
+    n_layers: 4                           # try different
+    domain_padding: null                  # reference?
+    domain_padding_mode: null             # symmetric, none
+    skip: 'soft-gating'
+    implementation: 'factorized'          # try reconstructed?
+    use_channel_mlp: 0                    # try 1
+    channel_mlp_dropout: 0
+    channel_mlp_expansion: 0.5
+    separable: False
+    factorization: None
+    rank: 1.0
+    fixed_rank_modes: None
+    joint_factorization: False
+    fno_block_precision: 'full'           # or 'half', 'mixed'
+    stabilizer: None                      # try 'tanh'
+    dtype: float32
+
+
+  ema:
+    update_after_step: None  # Start updating EMA after this number of steps
+    update_every: 1  # Update EMA every 'n' steps
+    beta: 0.995  # EMA smoothing factor (closer to 1 means smoother updates)
+
+  data: &DEFAULT_DATA
+    dataset_size: 1000
+    average_sequence_length: 1000
+    n_batches_per_epoch: 5000  # default is 5000 or 501?
+
+    height: 100
+    width: 100
+    seed: 666
+
+    use_cloth: 1
+    use_fluid: 0
+    use_diffusion: 0
+    use_poisson: 0
+
+  # Optimizer
+  opt: &DEFAULT_OPT
+    lr: 0.001  # Learning rate for the optimizer
+    batch_size: 10  # Batch size for training
+    n_epochs: 100  # Number of training epochs
+    clip_grad_norm: null  # Gradient norm clipping threshold
+    clip_grad_value: null  # Gradient value clipping threshold
+    optimizer: adamw
+    cuda: 1
+    plot: 0
+    warmup: 5
+    initial_warmup: 30
+    reset_loss_limit: 1000
+    save_mesh: 1
+    i_save: 1
+    L_shear_bend_version: 1
+    seed: 666
+
+
+  cloth: &DEFAULT_CLOTH
+    use_f_ext: 0
+    max_stretching: 1000  # Maximum stretching parameter for cloth
+    min_stretching: 100  # Minimum stretching parameter for cloth
+    max_shearing: 100  # Maximum shearing parameter for cloth
+    min_shearing: 1  # Minimum shearing parameter for cloth
+    max_bending: 10  # Maximum bending parameter for cloth
+    min_bending: 0.01  # Minimum bending parameter for cloth
+    a_ext: 1  # External acceleration (gravitational constant)
+    min_a_ext: null  # Minimum gravitational constant (defaults to a_ext if not set)
+    g: 0.125  # Gravitational constant (deprecated, prefer a_ext)
+    L_0: 1  # Rest length of cloth grid edges
+    dt: 1  # Timestep for cloth simulation integrator
+    repulsive:
+      k: 0
+      resolution: 32
+    # Load parameters
+    l_stretching: null  # Load stretching parameter of cloth
+    l_shearing: null  # Load shearing parameter of cloth
+    l_bending: null  # Load bending parameter of cloth
+    l_g: null  # Load gravitational constant
+    l_L_0: null  # Load rest length of cloth grid edges
+    l_dt: 1  # Load timestep of cloth simulation integrator
+    load_date_time: null  # Date and time of the run to load
+    load_index: null  # Index of the run to load
+    load_optimizer: false  # Whether to load the state of the optimizer
+    load_latest: false  # Load the latest version for training (overrides date_time and index)
+
+  Fluid: &DEFAULT_FLUID
+    integrator: imex
+    loss_bound: 20
+    loss_nav: 1
+    loss_mean_a: 0.1
+    loss_mean_p: 0.1
+    regularize_grad_p: 0
+    max_speed: 0
+    mu: 10
+    min_mu: 0.01
+    rho: 10
+    min_rho: 0.01
+
+  Diffusion: &DEFAULT_DIFFUSION
+    D: 1000
+    min_D: 1
+
+  Wave: &DEFAULT_WAVE
+    c: 10
+    min_c: 0.1
+
+  # Weights and biases
+  wandb: &DEFAULT_WANDB
+    root_dir: './'
+    log: true
+    group: 'fno'
+
+  distributed:
+    use_distributed: False
+    wireup_info: 'mpi'
+    wireup_store: 'tcp'
+    model_parallel_size: 2
+
+  inference: &DEFAULT_INFERENCE
+    load_date_time: "??"
+    load_index: null
+    visualize_scaling: 0
+    visualize_grads: 0
+    save_obj: 0
+    postfix: "a"
+    renderer: "Nvdiffrast"          # Nvdiffrast / PyTorch3D
+    framerate: 50
+    height: 100
+    width: 100
+    material:
+      stretching: 1000
+      shearing: 10
+      bending: 10
+    sft: &DEFAULT_SFT
+#      json: [ "scenes/R1.json", "scenes/R2.json","scenes/R3.json","scenes/R4.json","scenes/R5.json","scenes/R6.json","scenes/R7.json","scenes/R8.json","scenes/R9.json","scenes/S1_res32.json","scenes/S2_res32.json","scenes/S3_res32.json","scenes/S4_res32.json" ]
+      json: ["scenes/S1_res32.json", "scenes/S2_res32.json", "scenes/S3_res32.json", "scenes/S4_res32.json"]
+#      json: ["scenes/R1.json"]
+      evaluate: 1
+      optimize_uv: 1
+      debug: 0
+      save_mesh: 1
+      n_epochs_opt: 250
+      debug_n_save: 100
+      save_render: 0
+      save_acc_heatmap: 0
+      new_frame_period: 5
+
+      lr: &DEFAULT_lr
+        stretching: 5e1
+        shearing: 1e-1
+        bending: 1e-2
+        external: 5e-2
+        vertex: 1e-3
+        uv: 2e-4
+
+      lc: &DEFAULT_lc  # loss coefficients
+        rgb: 1
+        sil: 1
+        shift: 1e-2
+
+    rollout: &DEFAULT_ROLLOUT
+      n_frames: 600
+      save_render: 1
+      save_acc_heatmap: 1
+      json: ["sft/scenes/S1_res48.json"]
+
+
+
+a: &a
+  <<: *DEFAULT
+  name: '0321_01_fno'
+  net:
+    <<: *DEFAULT_NET
+
+  opt:
+    <<: *DEFAULT_OPT
+    cuda: 1
+    plot: 0
+  cloth:
+    <<: *DEFAULT_CLOTH
+  data:
+    <<: *DEFAULT_DATA
+
+  inference:
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "2025-03-21 18:59:41"
+    average_sequence_length: 100
+    iterations_per_timestep: 10
+
+
+b: &b
+  <<: *DEFAULT
+  name: '0322_01_fno_light'
+  net: &LIGHT_NET
+    <<: *DEFAULT_NET
+    n_layers: 2
+    hidden_channels: 64
+    projection_channels: 128
+
+  opt:
+    <<: *DEFAULT_OPT
+    cuda: 1
+    plot: 0
+  cloth:
+    <<: *DEFAULT_CLOTH
+  data:
+    <<: *DEFAULT_DATA
+
+  inference:
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "2025-03-22 22:44:02"
+    average_sequence_length: 100
+    iterations_per_timestep: 10
+
+
+c: &c
+  <<: *DEFAULT
+  name: '0321_01_fno_c'
+  net:
+    <<: *LIGHT_NET
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 1
+    cuda: 1
+    plot: 0
+  cloth:
+    <<: *DEFAULT_CLOTH
+  data:
+    <<: *DEFAULT_DATA
+
+  inference:
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "2025-03-23 15:48:22"
+    average_sequence_length: 100
+    iterations_per_timestep: 10
+
+d: &d
+  <<: *DEFAULT
+  name: '0330_01_fno_d'
+  net:
+    <<: *DEFAULT_NET
+    n_modes_height: 8                    # try smaller
+    n_modes_width: 8
+    hidden_channels: 64                  # try different
+    projection_channels: 64
+
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 1
+    cuda: 1 
+    plot: 0
+  cloth:
+    <<: *DEFAULT_CLOTH
+  data:
+    <<: *DEFAULT_DATA
+
+  inference: &inference_d
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "2025-03-30 21:38:15"
+    average_sequence_length: 500
+    iterations_per_timestep: 30
+    height: 100
+    width: 100
+
+
+
+xxx: &xxx
+  <<: *DEFAULT
+  name: '0330_01_fno_d'
+  net:
+    <<: *DEFAULT_NET
+    n_modes_height: 8                    # try smaller
+    n_modes_width: 8
+    hidden_channels: 64                  # try different
+    projection_channels: 64
+
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 1
+    cuda: 1
+    plot: 0
+  cloth:
+    <<: *DEFAULT_CLOTH
+  data:
+    <<: *DEFAULT_DATA
+
+  inference: &inference_d
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "???"
+    average_sequence_length: 500
+    iterations_per_timestep: 30
+    height: 100
+    width: 100
+
+
+################################################
+local:
+  <<: *d
+  opt:
+    <<: *DEFAULT_OPT
+    batch_size: 3
+    cuda: 0
+    plot: 0
+#  data:
+#    <<: *DEFAULT_DATA
+
+  # Weights and biases
+  wandb:
+    <<: *DEFAULT_WANDB
+    log: false
+
+  inference:
+    <<: *inference_d
+    renderer: "PyTorch3D"
+    width: 50
+    sft:
+      <<: *DEFAULT_SFT
+      json: ["scenes/R1.json"]
+      evaluate: 0
+      optimize_uv: 0
+      debug: 1
+    cuda: 0
+
+
+
+debug:
+  <<: *xxx
+  opt:
+    <<: *DEFAULT_OPT
+    batch_size: 10
+    cuda: 0
+    plot: 0
+  wandb:
+    <<: *DEFAULT_WANDB
+    log: false

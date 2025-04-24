@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 #from setups_multistep_1_channel import Dataset
-from dataset_cloth import DatasetCloth
+from dataset_cloth import DatasetCloth, DatasetClothWithExternalForce
 from dataset_poisson import DatasetPoisson
 from dataset_fluid import DatasetFluid
 from dataset_diffusion import DatasetDiffusion
@@ -13,7 +13,26 @@ from torch.optim import Adam, AdamW
 from torch.optim.lr_scheduler import MultiStepLR
 import numpy as np
 from get_param import params,toCuda,toCpu,get_hyperparam,get_load_hyperparam,toDType
-from utils import has_nan, replace_with_periodic_padding
+from utils import has_nan
+import wandb
+# from utils import replace_with_periodic_padding
+
+
+def wandb_init(opt, tags=None):
+	print('run name:', opt.name)
+	if opt.wandb:
+		print("Wandb init ...")
+		wandb.init(
+			dir=opt.wandb_root_dir,
+			project='Metamizer',
+			name=opt.name,
+			mode='offline',
+			config=opt,
+			tags=tags
+		)
+		print('wandb dir:', wandb.run.dir)
+
+
 
 torch.manual_seed(0)
 torch.set_num_threads(4)
@@ -30,7 +49,7 @@ steps_per_log = 10
 
 optimizer = AdamW(metamizer.parameters(),lr=params.lr)
 scheduler = MultiStepLR(optimizer, milestones=[25,50,75], gamma=0.5)
-
+wandb_init(params)
 
 logger = Logger(get_hyperparam(params),use_csv=False,use_tensorboard=params.log)
 if params.load_latest or params.load_date_time is not None or params.load_index is not None:
@@ -43,7 +62,7 @@ if params.load_latest or params.load_date_time is not None or params.load_index 
 	print(f"loaded: {params.load_date_time}, {params.load_index}")
 params.load_index = 0 if params.load_index is None else params.load_index
 
-metamizer = replace_with_periodic_padding(metamizer)
+# metamizer = replace_with_periodic_padding(metamizer)	# TODO why no implementation for this?
 
 datasets = []
 names = []
@@ -65,7 +84,7 @@ for iterations_per_timestep in [1,3,10,30]:
 	dataset_fluid = DatasetToSingleChannel(original_dataset_fluid)
 	datasets.append(dataset_fluid)
 	names.append(f"fluid_{iterations_per_timestep}")
-	
+
 	# diffusion dataset
 	original_dataset_diffusion = DatasetDiffusion(params.height,params.width,params.batch_size,params.dataset_size,average_sequence_length=200,iterations_per_timestep=iterations_per_timestep)
 	dataset_diffusion = DatasetToSingleChannel(original_dataset_diffusion)
@@ -115,6 +134,13 @@ for epoch in range(int(params.load_index),params.n_epochs):
 		
 		if step%steps_per_log == 0:
 			logger.log(f"L",loss,epoch*params.n_batches_per_epoch+step)
+
+			# wandb
+			if params.wandb:
+				# wandb
+				wandb.log({"Step": epoch*params.n_batches_per_epoch+step,
+						   "L_total": loss})
+
 		print(f"({step} / {params.n_batches_per_epoch}): L: {loss}")
 		
 		if has_nan(loss):

@@ -60,7 +60,10 @@ if save:
 
 metamizer = toDType(toCuda(get_Net(params)))
 
-date_time,index = logger.load_state(metamizer,None,datetime=params.load_date_time,index=params.load_index)
+device = 'cuda' if params.cuda else 'cpu'
+
+
+date_time,index = logger.load_state(metamizer,None,datetime=params.load_date_time,index=params.load_index, device=device)
 print(f"loaded: {date_time}, {index}")
 metamizer.eval()
 

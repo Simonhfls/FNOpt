@@ -1,0 +1,40 @@
+{
+    "scene": "T1",
+    "n_images": 49,
+    "mesh_file": "../datasets/pgsft/template_thuy_origin.obj",
+    "mesh_size": 2,
+    "texture_file": "../datasets/pgsft/T1/texture.jpg",
+    "image_files": "../datasets/pgsft/T1/rgbs_nvdiffrast/",
+    "mask_files": "../datasets/pgsft/T1/blurred_masks/",
+    "result_point_cloud_files": "../evaluation/T1/ours/point_cloud_",
+    "result_chamfer_file": "../evaluation/T1/chamfer_distances_ours.pt",
+    "ground_truth_dir": "../datasets/pgsft/T1/surfaces/",
+    "camera_position": [
+        1, 4, 2
+    ],
+    "camera_forward": [
+        0.0,
+        0.0,
+        1.0
+    ],
+    "camera_up": [
+        0.0,
+        1.0,
+        0.0
+    ],
+
+    "lower_left_corner": [
+        0,
+        0
+    ],
+    "upper_right_corner": [
+        512,
+        512
+    ],
+    "object_position": [0, 1, 0],
+    "width": 512, 
+    "height": 512,
+    "transform": {"rotate":[93.84, -0.935, 0.251, 0.251]},
+    "gravity": [0, -9.76, 0],
+    "wind": {"velocity": [0, 0, 0]}
+}

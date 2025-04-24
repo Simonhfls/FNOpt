@@ -1,0 +1,35 @@
+{
+    "scene": "S3",
+    "n_images": 49,
+    "mesh_file": "../datasets/pgsft/template_grid_32.obj",
+    "mesh_size": 1,
+    "texture_file": "../datasets/pgsft/S3/texture.jpg",
+    "image_files": "../datasets/pgsft/S3/rgbs_nvdiffrast/",
+    "mask_files": "../datasets/pgsft/S3/blurred_masks/",
+    "result_point_cloud_files": "../evaluation/S3/ours/point_cloud_",
+    "result_chamfer_file": "../evaluation/S3/chamfer_distances_ours.pt",
+    "ground_truth_dir": "../datasets/pgsft/S3/surfaces_32x32/",
+    "camera_position": [
+        0.5, -1.0, 1
+    ],
+    "camera_up": [
+        0.0,
+        1.0,
+        0.0
+    ],
+
+    "lower_left_corner": [
+        0,
+        0
+    ],
+    "upper_right_corner": [
+        512,
+        512
+    ],
+    "object_position": [0.5, 0.5, 0],
+    "width": 512, 
+    "height": 512,
+    "transform": {"rotate":[30,1,0,0]},
+    "gravity": [0, 0, -0.56],
+    "wind": {"velocity": [0, 1, 0]}
+}

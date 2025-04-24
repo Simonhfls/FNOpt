@@ -1,6 +1,4 @@
 import torch
-import numpy as np
-from get_param import params,toCuda,toCpu
 from utils import has_nan
 
 # this script contains multistep dataset functionality to:
@@ -31,7 +29,23 @@ class DatasetToSingleChannel:
 		hidden_states = [[None for _ in range(self.c)] if hs is None else hs for hs in hidden_states]
 		split_hidden_states = [hs_split for hs_merged in hidden_states for hs_split in hs_merged]
 		return split_grads, split_hidden_states
-	
+
+	def ask_sft(self):
+		"""
+		ask for a batch from multi_channel_dataset. The multi channel samples are split into single channel samples.
+		:return:
+			:grads: gradients for accelerations (shape: batch_size*n_channels x 1 x h x w)
+			:hidden_states: list of length batch_size * n_channels that contains the hidden_states
+							(list entries are None if corresponding hidden_states are not yet set)
+		"""
+		grads, hidden_states = self.multi_channel_dataset.ask_sft()
+		self.bs, self.c, self.h, self.w = grads.shape
+		split_grads = grads.reshape(self.bs*self.c,1,self.h,self.w)
+		hidden_states = [[None for _ in range(self.c)] if hs is None else hs for hs in hidden_states]
+		split_hidden_states = [hs_split for hs_merged in hidden_states for hs_split in hs_merged]
+		return split_grads, split_hidden_states
+
+
 	def tell(self,step, hidden_states=None):
 		"""
 		The single channel update steps and hidden_states are merged into multi channel updates.
@@ -45,6 +59,14 @@ class DatasetToSingleChannel:
 		merge_hidden_states = None if hidden_states is None else [hidden_states[i*self.c:(i+1)*self.c] for i in range(self.bs)]
 		l = self.multi_channel_dataset.tell(merge_step,merge_hidden_states)
 		return l
+
+	def tell_sft(self, step, hidden_states=None):
+		merge_step = step.reshape(self.bs, self.c, self.h, self.w)
+		merge_hidden_states = None if hidden_states is None else [hidden_states[i * self.c:(i + 1) * self.c] for i in
+																  range(self.bs)]
+		l = self.multi_channel_dataset.tell_sft(merge_step, merge_hidden_states)
+		return l
+
 
 
 class DatasetConcat: # TODO

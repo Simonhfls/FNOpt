@@ -28,7 +28,8 @@ class Logger():
 			self.datetime=datetime
 		else:
 			self.datetime = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-		
+		print("Logger logging to:",  self.datetime)
+
 		self.use_csv = use_csv
 		if use_csv:
 			os.makedirs('Logger/{}/{}/logs'.format(name,self.datetime),exist_ok=True)
@@ -162,7 +163,7 @@ class Logger():
 		with open(path,"wb") as f:
 			pickle.dump(dic,f)
 	
-	def load_state(self,model,optimizer,datetime=None,index=None,continue_datetime=False):
+	def load_state(self,model,optimizer,datetime=None,index=None,continue_datetime=False, device='cuda'):
 		"""
 		loads state of model and optimizer
 		:model: model to load (if list: load multiple models)
@@ -191,7 +192,7 @@ class Logger():
 				break
 		
 		path = 'Logger/{}/{}/states/{}.state'.format(self.name,datetime,index)
-		state = torch.load(path)
+		state = torch.load(path, map_location=device)
 		
 		if type(model) is not list:
 			model = [model]

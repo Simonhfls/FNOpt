@@ -1,0 +1,1029 @@
+default: &DEFAULT
+  name: 'uno_base'
+  net: &DEFAULT_NET
+    name: 'UNOVertex'
+    hidden_channels: 5                  # try different
+    in_channels: 3
+    out_channels: 1
+    projection_channels: 256
+    uno_out_channels: [32, 64, 64, 64, 32]
+    uno_n_modes: [[5, 5], [5, 5], [5, 5], [5, 5], [5, 5]]
+    uno_scalings: [[1.0, 1.0], [0.5, 0.5], [0.5, 0.5], [2, 2], [2, 2]]
+    scale_feature_layer: 2
+    horizontal_skips_map: None
+    n_layers: 5                          # try different
+    domain_padding: null                  # reference?
+    domain_padding_mode: null             # symmetric, none
+    fno_skip: 'linear'
+    horizontal_skip: 'linear'
+    implementation: 'factorized'          # try reconstructed?
+    use_channel_mlp: 0                    # try 1
+    separable: False
+    factorization: None
+    rank: 1.0
+    fixed_rank_modes: None
+    joint_factorization: False
+    dtype: float32
+
+
+  ema:
+    update_after_step: None  # Start updating EMA after this number of steps
+    update_every: 1  # Update EMA every 'n' steps
+    beta: 0.995  # EMA smoothing factor (closer to 1 means smoother updates)
+
+  data: &DEFAULT_DATA
+    dataset_size: 1000
+    average_sequence_length: 1000
+    n_batches_per_epoch: 5000  # default is 5000 or 501?
+    height: 100
+    width: 100
+    seed: 666
+
+    use_cloth: 1
+    use_fluid: 1
+    use_diffusion: 1
+    use_poisson: 1
+
+  # Optimizer
+  opt: &DEFAULT_OPT
+    lr: 0.001  # Learning rate for the optimizer
+    batch_size: 10  # Batch size for training
+    n_epochs: 100  # Number of training epochs
+    clip_grad_norm: null  # Gradient norm clipping threshold
+    clip_grad_value: null  # Gradient value clipping threshold
+    cuda: 1
+    plot: 0
+    reset_loss_limit: 1000
+    save_mesh: 1
+    i_save: 1
+    L_shear_bend_version: 1
+    seed: 666
+    optimizer: adamw
+
+
+
+  cloth: &DEFAULT_CLOTH
+    use_f_ext: 0
+    max_stretching: 1000  # Maximum stretching parameter for cloth
+    min_stretching: 100  # Minimum stretching parameter for cloth
+    max_shearing: 100  # Maximum shearing parameter for cloth
+    min_shearing: 1  # Minimum shearing parameter for cloth
+    max_bending: 10  # Maximum bending parameter for cloth
+    min_bending: 0.01  # Minimum bending parameter for cloth
+    k_repulsive: 0
+
+    a_ext: 1  # External acceleration (gravitational constant)
+    min_a_ext: null  # Minimum gravitational constant (defaults to a_ext if not set)
+    g: 0.125  # Gravitational constant (deprecated, prefer a_ext)
+    L_0: 1  # Rest length of cloth grid edges
+    dt: 1  # Timestep for cloth simulation integrator
+#    f_ext_percentage: 0.2
+
+    # Load parameters
+    l_stretching: null  # Load stretching parameter of cloth
+    l_shearing: null  # Load shearing parameter of cloth
+    l_bending: null  # Load bending parameter of cloth
+    l_g: null  # Load gravitational constant
+    l_L_0: null  # Load rest length of cloth grid edges
+    l_dt: 1  # Load timestep of cloth simulation integrator
+    load_date_time: null  # Date and time of the run to load
+    load_index: null  # Index of the run to load
+    load_optimizer: false  # Whether to load the state of the optimizer
+    load_latest: false  # Load the latest version for training (overrides date_time and index)
+
+  Fluid: &DEFAULT_FLUID
+    integrator: imex
+    loss_bound: 20
+    loss_nav: 1
+    loss_mean_a: 0.1
+    loss_mean_p: 0.1
+    regularize_grad_p: 0
+    max_speed: 0
+    mu: 10
+    min_mu: 0.01
+    rho: 10
+    min_rho: 0.01
+
+  Diffusion: &DEFAULT_DIFFUSION
+    D: 1000
+    min_D: 1
+
+  Wave: &DEFAULT_WAVE
+    c: 10
+    min_c: 0.1
+
+  # Weights and biases
+  wandb: &DEFAULT_WANDB
+    root_dir: './'
+    log: true
+    group: 'fno'
+
+  distributed:
+    use_distributed: False
+    wireup_info: 'mpi'
+    wireup_store: 'tcp'
+    model_parallel_size: 2
+
+  inference: &DEFAULT_INFERENCE
+    load_date_time: "??"
+    load_index: null
+    save_obj: 0
+    visualize_scaling: 0
+    visualize_grads: 0
+    postfix: "a"
+    renderer: "Nvdiffrast"          # Nvdiffrast / PyTorch3D
+    framerate: 50
+    average_sequence_length: 300
+    iterations_per_timestep: 10
+    height: 100
+    width: 100
+    material:
+      stretching: 1000
+      shearing: 10
+      bending: 10
+    sft: &DEFAULT_SFT
+#      json: [ "scenes/R1.json", "scenes/R2.json","scenes/R3.json","scenes/R4.json","scenes/R5.json","scenes/R6.json","scenes/R7.json","scenes/R8.json","scenes/R9.json","scenes/S1_res32.json","scenes/S2_res32.json","scenes/S3_res32.json","scenes/S4_res32.json" ]
+      json: ["scenes/S1_res32.json", "scenes/S2_res32.json", "scenes/S3_res32.json", "scenes/S4_res32.json"]
+#      json: ["scenes/R1.json"]
+      evaluate: 1
+      optimize_uv: 1
+      debug: 0
+      save_mesh: 1
+      n_epochs_opt: 250
+      debug_n_save: 100
+      save_render: 0
+      save_acc_heatmap: 0
+      new_frame_period: 5
+
+      lr: &DEFAULT_lr
+        stretching: 5e1
+        shearing: 1e-1
+        bending: 1e-2
+        external: 5e-2
+        vertex: 1e-3
+        uv: 2e-4
+
+      lc: &DEFAULT_lc  # loss coefficients
+        rgb: 1
+        sil: 1
+        shift: 1e-2
+
+    rollout: &DEFAULT_ROLLOUT
+      n_frames: 600
+      save_render: 1
+      save_acc_heatmap: 1
+      json: ["scenes/S1_res48.json"]
+
+
+
+a: &a
+  <<: *DEFAULT
+  name: '0323_01_uno'
+  net:
+    <<: *DEFAULT_NET
+
+  opt:
+    <<: *DEFAULT_OPT
+
+  cloth:
+    <<: *DEFAULT_CLOTH
+    use_f_ext: 0
+  data: &CLOTH_DATA
+    <<: *DEFAULT_DATA
+    use_cloth: 1
+    use_fluid: 0
+    use_diffusion: 0
+    use_poisson: 0
+  inference:
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "??"
+
+
+b: &b
+  <<: *a
+  name: '0323_02_uno'
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 1
+  inference:
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "2025-03-23 17:31:45"
+
+
+c: &c
+  <<: *DEFAULT
+  name: '0323_04_uno'
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 1
+  data:
+    <<: *DEFAULT_DATA
+
+  inference:
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "??"
+
+
+d: &d
+  <<: *DEFAULT
+  name: '0323_05_uno'
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 0.2
+  data:
+    <<: *CLOTH_DATA
+
+  inference:
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "2025-03-23 22:39:41"
+
+
+e: &e
+  <<: *DEFAULT
+  name: '0323_06_uno'
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 1
+  net:
+    <<: *DEFAULT_NET
+    hidden_channels: 128
+    n_layers: 5
+
+  data:
+    <<: *CLOTH_DATA
+
+  inference:
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "2025-03-23 22:51:26"
+
+
+f: &f
+  <<: *DEFAULT
+  name: '0323_07_uno'
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 1
+  net:
+    <<: *DEFAULT_NET
+    hidden_channels: 128
+    n_layers: 5
+  data:
+    <<: *DEFAULT_DATA
+  inference:
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "2025-03-23 23:10:59"
+
+
+g: &g
+  <<: *DEFAULT
+  name: '0324_01_uno_g'
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 1
+    lr: 0.0001
+  net:
+    <<: *DEFAULT_NET
+    hidden_channels: 128
+    n_layers: 5
+  data:
+    <<: *CLOTH_DATA
+  inference:
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "2025-03-24 08:23:43"
+
+i: &i   # bad
+  <<: *DEFAULT
+  name: '0324_03_uno_i'
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 0.05
+    lr: 0.0001
+  net:
+    <<: *DEFAULT_NET
+    hidden_channels: 128
+    n_layers: 5
+  data:
+    <<: *CLOTH_DATA
+
+  inference:
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "2025-03-24 08:30:38"
+
+
+j: &j
+  <<: *DEFAULT
+  name: '0324_08_uno_j'
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 1
+    lr: 0.001
+  net:
+    <<: *DEFAULT_NET
+    hidden_channels: 128
+    uno_out_channels: [ 32, 64, 64, 64, 32 ]
+    uno_n_modes: [ [ 16, 16 ], [ 8, 8 ], [ 8, 8 ], [ 8, 8 ], [ 16, 16 ] ]
+    uno_scalings: [ [ 1.0, 1.0 ], [ 0.5, 0.5 ], [ 1, 1 ], [ 2, 2 ], [ 1, 1 ] ]
+    scale_feature_layer: 2
+
+  data:
+    <<: *CLOTH_DATA
+
+  inference:
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "??"
+
+k: &k
+  <<: *DEFAULT
+  name: '0324_05_uno_k'
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 1
+    lr: 0.001
+  net:
+    <<: *DEFAULT_NET
+    hidden_channels: 128
+    n_layers: 3
+    uno_out_channels: [ 32, 64, 32 ]
+    uno_n_modes: [ [ 16, 16 ], [ 8, 8 ], [ 16, 16 ] ]
+    uno_scalings: [ [ 1.0, 1.0 ], [ 0.5, 0.5 ], [ 2.0, 2.0 ]]
+    scale_feature_layer: 1
+
+  data:
+    <<: *CLOTH_DATA
+
+  inference:
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "??"
+
+l: &l
+  <<: *DEFAULT
+  name: '0324_06_uno_l'
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 1
+    lr: 0.001
+  net:
+    <<: *DEFAULT_NET
+    hidden_channels: 128
+    n_layers: 3
+    uno_out_channels: [ 32, 64, 32 ]
+    uno_n_modes: [ [ 16, 16 ], [ 8, 8 ], [ 16, 16 ] ]
+    uno_scalings: [ [ 1, 1 ], [ 0.5, 0.5 ], [ 2, 2 ]]
+    scale_feature_layer: 1
+
+  data:
+    <<: *CLOTH_DATA
+  inference:
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "??"
+
+
+m: &m
+  <<: *DEFAULT
+  name: '0324_07_uno_m'
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 0.1
+    lr: 0.0001
+  net:
+    <<: *DEFAULT_NET
+    hidden_channels: 128
+    n_layers: 3
+    uno_out_channels: [ 32, 64, 32 ]
+    uno_n_modes: [ [ 16, 16 ], [ 8, 8 ], [ 16, 16 ] ]
+    uno_scalings: [ [ 1, 1 ], [ 0.5, 0.5 ], [ 2, 2 ]]
+    scale_feature_layer: 1
+
+  data:
+    <<: *CLOTH_DATA
+  inference:
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "??"
+
+
+
+n: &n
+  <<: *DEFAULT
+  name: '0324_09_uno_n'
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 1
+    lr: 0.001
+  net:
+    <<: *DEFAULT_NET
+    hidden_channels: 128
+
+  cloth:
+    <<: *DEFAULT_CLOTH
+    max_stretching: 5000  # Maximum stretching parameter for cloth
+    min_stretching: 500  # Minimum stretching parameter for cloth
+    max_shearing: 100  # Maximum shearing parameter for cloth
+    min_shearing: 1  # Minimum shearing parameter for cloth
+    max_bending: 10  # Maximum bending parameter for cloth
+    min_bending: 0.01  # Minimum bending parameter for cloth
+  data:
+    <<: *CLOTH_DATA
+  inference:
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "2025-03-24 18:10:34"
+
+
+o: &o
+  <<: *DEFAULT
+  name: '0324_10_uno_o'
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 1
+    lr: 0.001
+  net:
+    <<: *DEFAULT_NET
+    hidden_channels: 128
+    uno_out_channels: [ 64, 64, 64, 64, 64 ]
+    uno_n_modes: [ [ 16, 16 ], [ 8, 8 ], [ 8, 8 ], [ 8, 8 ], [ 16, 16 ] ]
+    uno_scalings: [ [ 1.0, 1.0 ], [ 1, 1 ], [ 1, 1 ], [ 1, 1 ], [ 1, 1 ] ]
+    scale_feature_layer: 2
+
+  data:
+    <<: *CLOTH_DATA
+  inference: &inference_o
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "2025-03-24 18:16:06"
+
+p: &p   # bad
+  <<: *DEFAULT
+  name: '0324_11_uno_p'
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 1
+    lr: 0.00001
+  net:
+    <<: *DEFAULT_NET
+    hidden_channels: 128
+
+  data:
+    <<: *CLOTH_DATA
+  inference:
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "2025-03-24 18:17:55"
+
+q: &q   # bad
+  <<: *DEFAULT
+  name: '0324_12_uno_q'
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 1
+    lr: 0.0001
+    optimizer: adam
+  net:
+    <<: *DEFAULT_NET
+    hidden_channels: 128
+
+  data:
+    <<: *CLOTH_DATA
+  inference:
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "2025-03-24 18:19:04"
+
+
+r: &r # better
+  <<: *DEFAULT
+  name: '0324_13_uno_r'
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 1
+    lr: 0.001
+  net:
+    <<: *DEFAULT_NET
+    hidden_channels: 128
+    uno_out_channels: [ 64, 64, 64 ]
+    uno_n_modes: [ [ 16, 16 ], [ 8, 8 ], [ 16, 16 ] ]
+    uno_scalings: [ [ 1.0, 1.0 ], [ 1, 1 ], [ 1, 1 ] ]
+    n_layers: 3                          # try different
+    scale_feature_layer: 1
+
+  data:
+    <<: *CLOTH_DATA
+  inference:
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "??"
+
+r2: &r2 # ?
+  <<: *DEFAULT
+  name: '0325_01_uno_r2'
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 10
+    lr: 0.001
+  net:
+    <<: *DEFAULT_NET
+    hidden_channels: 128
+    uno_out_channels: [ 64, 64, 64 ]
+    uno_n_modes: [ [ 16, 16 ], [ 8, 8 ], [ 16, 16 ] ]
+    uno_scalings: [ [ 1, 1 ], [ 1, 1 ], [ 1, 1 ] ]
+    n_layers: 3                          # try different
+    scale_feature_layer: 1
+
+  data:
+    <<: *CLOTH_DATA
+  inference:
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "??"
+
+
+s: &s  # not good
+  <<: *DEFAULT
+  name: '0324_14_uno_s'
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 1
+    lr: 0.001
+  net:
+    <<: *DEFAULT_NET
+    hidden_channels: 512
+    uno_out_channels: [ 128, 128, 128 ]
+    uno_n_modes: [ [ 32, 32 ], [ 16, 16 ], [ 32, 32 ] ]
+    uno_scalings: [ [ 1.0, 1.0 ], [ 1, 1 ], [ 1, 1 ] ]
+    n_layers: 3                          # try different
+    scale_feature_layer: 1
+
+
+t: &t
+  <<: *DEFAULT
+  name: '0324_15_uno_t'
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 1
+    lr: 0.001
+  net:
+    <<: *DEFAULT_NET
+    hidden_channels: 512
+    uno_out_channels: [ 64, 128, 64 ]
+    uno_n_modes: [ [ 32, 32 ], [ 16, 16 ], [ 32, 32 ] ]
+    uno_scalings: [ [ 1.0, 1.0 ], [ 0.5, 0.5  ], [ 2, 2 ] ]
+    n_layers: 3                          # try different
+    scale_feature_layer: 1
+  data:
+    <<: *CLOTH_DATA
+  inference: &inference_t
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "??"
+
+u: &u # not good
+  <<: *DEFAULT
+  name: '0324_16_uno_u'
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 1
+    lr: 0.001
+  net:
+    <<: *DEFAULT_NET
+    hidden_channels: 256
+    uno_out_channels: [ 32, 48, 64, 64, 64, 48, 32 ]
+    uno_n_modes: [ [ 32, 32 ], [ 24, 24 ], [ 16, 16 ], [ 16, 16 ], [ 16, 16 ], [ 24, 24 ], [ 32, 32 ] ]
+    uno_scalings: [ [ 1.0, 1.0 ], [ 0.5, 0.5 ],[ 0.5, 0.5 ], [ 1.0, 1.0 ], [ 1.0, 1.0 ], [ 2.0, 2.0 ], [ 2.0, 2.0 ],]
+    n_layers: 7                          # try different
+    scale_feature_layer: 3
+  data:
+    <<: *CLOTH_DATA
+  inference: &inference_u
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "??"
+
+
+v: &v
+  <<: *DEFAULT
+  name: '0324_15_uno_v'
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 1
+    lr: 0.01
+  net:
+    <<: *DEFAULT_NET
+    hidden_channels: 512
+    uno_out_channels: [ 64, 128, 64 ]
+    uno_n_modes: [ [ 32, 32 ], [ 16, 16 ], [ 32, 32 ] ]
+    uno_scalings: [ [ 1.0, 1.0 ], [ 1, 1 ], [ 1, 1 ] ]
+    n_layers: 3                          # try different
+    scale_feature_layer: 1
+  data:
+    <<: *CLOTH_DATA
+
+w: &w
+  <<: *DEFAULT
+  name: '0324_16_uno_w'
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 1
+    lr: 0.1
+  net:
+    <<: *DEFAULT_NET
+    hidden_channels: 512
+    uno_out_channels: [ 64, 128, 64 ]
+    uno_n_modes: [ [ 32, 32 ], [ 16, 16 ], [ 32, 32 ] ]
+    uno_scalings: [ [ 1.0, 1.0 ], [ 1, 1 ], [ 1, 1 ] ]
+    n_layers: 3                          # try different
+    scale_feature_layer: 1
+  data:
+    <<: *CLOTH_DATA
+
+
+x: &x
+  <<: *DEFAULT
+  name: '0325_02_uno_x'
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 10
+    lr: 0.001
+  net:
+    <<: *DEFAULT_NET
+    hidden_channels: 128
+    uno_out_channels: [ 32, 64, 32 ]
+    uno_n_modes: [ [ 8, 16 ], [ 16, 16 ], [ 8, 8 ] ]
+    uno_scalings: [ [ 1.0, 1.0 ], [ 0.5, 0.5 ], [ 2, 2 ] ]
+    n_layers: 3                          # try different
+    scale_feature_layer: 1
+  data:
+    <<: *CLOTH_DATA
+
+
+y: &y
+  <<: *DEFAULT
+  name: '0325_03_uno_y'
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 10
+    lr: 0.001
+  net:
+    <<: *DEFAULT_NET
+    hidden_channels: 128
+    uno_out_channels: [ 32, 64, 32 ]
+    uno_n_modes: [ [ 8, 16 ], [ 16, 16 ], [ 8, 8 ] ]
+    uno_scalings: [ [ 1.0, 1.0 ], [ 0.5, 0.5 ], [ 2, 2 ] ]
+    n_layers: 3                          # try different
+    scale_feature_layer: 1
+    domain_padding: 0.2                  # reference?
+    domain_padding_mode: "one-sided"             # symmetric, none
+  data:
+    <<: *CLOTH_DATA
+
+
+z: &z # not good
+  <<: *DEFAULT
+  name: '0325_04_uno_z'
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 10
+    lr: 0.001
+  net:
+    <<: *DEFAULT_NET
+    hidden_channels: 128
+    uno_out_channels: [ 64, 64, 64 ]
+    uno_n_modes: [ [ 16, 16 ], [ 8, 8 ], [ 16, 16 ] ]
+    uno_scalings: [ [ 1.0, 1.0 ], [ 1, 1 ], [ 1, 1 ] ]
+    n_layers: 3                          # try different
+    scale_feature_layer: 1
+
+  data:
+    <<: *CLOTH_DATA
+
+  inference:
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "2025-03-25 15:57:51"
+
+
+aa: &aa # better
+  <<: *DEFAULT
+  name: '0325_05_uno_aa'
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 10
+    lr: 0.001
+  net:
+    <<: *DEFAULT_NET
+    hidden_channels: 64
+    projection_channels: 128
+    uno_out_channels: [ 64, 64, 64 ]
+    uno_n_modes: [ [ 16, 16 ], [ 16, 16 ], [ 16, 16 ] ]
+    uno_scalings: [ [ 1.0, 1.0 ], [ 1, 1 ], [ 1, 1 ] ]
+    n_layers: 3                          # try different
+    scale_feature_layer: 1
+  data:
+    <<: *CLOTH_DATA
+
+  inference:
+    <<: *DEFAULT_INFERENCE
+    height: 24
+    width: 24
+    load_date_time: "2025-03-25 14:27:39"
+
+
+
+ab: &ab # better
+  <<: *DEFAULT
+  name: '0325_06_uno_ab'
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 100
+    lr: 0.001
+  net:
+    <<: *DEFAULT_NET
+    hidden_channels: 64
+    projection_channels: 128
+    uno_out_channels: [ 64, 64, 64 ]
+    uno_n_modes: [ [ 16, 16 ], [ 16, 16 ], [ 16, 16 ] ]
+    uno_scalings: [ [ 1.0, 1.0 ], [ 1, 1 ], [ 1, 1 ] ]
+    n_layers: 3                          # try different
+    scale_feature_layer: 1
+  data:
+    <<: *CLOTH_DATA
+
+  inference:
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "2025-03-25 22:32:40"
+    height: 64
+    width: 64
+    iterations_per_timestep: 50
+
+
+ac: &ac
+  <<: *DEFAULT
+  name: '0325_07_uno_ac'
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 10
+    lr: 0.001
+  net:
+    <<: *DEFAULT_NET
+    hidden_channels: 32
+    projection_channels: 64
+    uno_out_channels: [ 64, 64, 64 ]
+    uno_n_modes: [ [ 16, 16 ], [ 16, 16 ], [ 16, 16 ] ]
+    uno_scalings: [ [ 1.0, 1.0 ], [ 1, 1 ], [ 1, 1 ] ]
+    n_layers: 3                          # try different
+    scale_feature_layer: 1
+  data:
+    <<: *CLOTH_DATA
+
+  inference:
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "2025-03-25 22:34:25"
+
+
+ad: &ad # not ok
+  <<: *DEFAULT
+  name: '0325_08_uno_ad'
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 10
+    lr: 0.001
+  net:
+    <<: *DEFAULT_NET
+    hidden_channels: 32
+    projection_channels: 64
+    uno_out_channels: [ 32, 32, 32 ]
+    uno_n_modes: [ [ 8, 8 ], [ 8, 8 ], [ 8, 8 ] ]
+    uno_scalings: [ [ 1.0, 1.0 ], [ 1, 1 ], [ 1, 1 ] ]
+    n_layers: 3                          # try different
+    scale_feature_layer: 1
+  data:
+    <<: *CLOTH_DATA
+
+  inference:
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "2025-03-25 22:38:40"
+
+ae: &ae # not ok
+  <<: *DEFAULT
+  name: '0325_09_uno_ae'
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 10
+    lr: 0.001
+  net:
+    <<: *DEFAULT_NET
+    hidden_channels: 32
+    projection_channels: 64
+    uno_out_channels: [ 32, 32, 32 ]
+    uno_n_modes: [ [ 4, 4 ], [ 4, 4 ], [ 4, 4 ] ]
+    uno_scalings: [ [ 1.0, 1.0 ], [ 1, 1 ], [ 1, 1 ] ]
+    n_layers: 3                          # try different
+    scale_feature_layer: 1
+  data:
+    <<: *CLOTH_DATA
+
+  inference:
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "2025-03-25 22:40:31"
+
+
+af: &af # not ok
+  <<: *DEFAULT
+  name: '0325_10_uno_af'
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 10
+    lr: 0.001
+  net:
+    <<: *DEFAULT_NET
+    hidden_channels: 32
+    projection_channels: 64
+    uno_out_channels: [ 16, 16, 16 ]
+    uno_n_modes: [ [ 4, 4 ], [ 4, 4 ], [ 4, 4 ] ]
+    uno_scalings: [ [ 1.0, 1.0 ], [ 1, 1 ], [ 1, 1 ] ]
+    n_layers: 3                          # try different
+    scale_feature_layer: 1
+  data:
+    <<: *CLOTH_DATA
+
+  inference:
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "2025-03-25 22:41:14"
+
+ag: &ag
+  <<: *DEFAULT
+  name: '0325_11_uno_ag'
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 1000
+    lr: 0.001
+  net:
+    <<: *DEFAULT_NET
+    hidden_channels: 64
+    projection_channels: 128
+    uno_out_channels: [ 64, 64, 64 ]
+    uno_n_modes: [ [ 16, 16 ], [ 16, 16 ], [ 16, 16 ] ]
+    uno_scalings: [ [ 1.0, 1.0 ], [ 1, 1 ], [ 1, 1 ] ]
+    n_layers: 3                          # try different
+    scale_feature_layer: 1
+  data:
+    <<: *CLOTH_DATA
+
+  inference:
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "??"
+
+ah: &ah # not ok
+  <<: *DEFAULT
+  name: '0325_12_uno_ah'
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 100
+    lr: 0.01
+  net:
+    <<: *DEFAULT_NET
+    hidden_channels: 64
+    projection_channels: 128
+    uno_out_channels: [ 64, 64, 64 ]
+    uno_n_modes: [ [ 16, 16 ], [ 16, 16 ], [ 16, 16 ] ]
+    uno_scalings: [ [ 1.0, 1.0 ], [ 1, 1 ], [ 1, 1 ] ]
+    n_layers: 3                          # try different
+    scale_feature_layer: 1
+  data:
+    <<: *CLOTH_DATA
+
+  inference:
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "??"
+
+ai: &ai # better
+  <<: *DEFAULT
+  name: '0325_13_uno_ai'
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 100
+    lr: 0.001
+  net:
+    <<: *DEFAULT_NET
+    hidden_channels: 128
+    projection_channels: 256
+    uno_out_channels: [ 64, 64, 64 ]
+    uno_n_modes: [ [ 16, 16 ], [ 16, 16 ], [ 16, 16 ] ]
+    uno_scalings: [ [ 1.0, 1.0 ], [ 1, 1 ], [ 1, 1 ] ]
+    n_layers: 3                          # try different
+    scale_feature_layer: 1
+  data:
+    <<: *CLOTH_DATA
+
+  inference:
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "??"
+
+
+aj: &aj
+  <<: *DEFAULT
+  name: '0326_01_uno_aj'
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 10
+    lr: 0.001
+  net:
+    <<: *DEFAULT_NET
+    hidden_channels: 128
+    projection_channels: 256
+    uno_out_channels: [ 64, 64, 64 ]
+    uno_n_modes: [ [ 32, 32 ], [ 32, 32 ], [ 32, 32 ] ]
+    uno_scalings: [ [ 1.0, 1.0 ], [ 1, 1 ], [ 1, 1 ] ]
+    n_layers: 3                          # try different
+    scale_feature_layer: 1
+  data:
+    <<: *CLOTH_DATA
+
+  inference:
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "??"
+
+ak: &ak
+  <<: *DEFAULT
+  name: '0326_02_uno_ak'
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 10
+    lr: 0.001
+  net:
+    <<: *DEFAULT_NET
+    hidden_channels: 128
+    projection_channels: 256
+    uno_out_channels: [ 64, 64, 64 ]
+    uno_n_modes: [ [ 64, 64 ], [ 64, 64 ], [ 64, 64 ] ]
+    uno_scalings: [ [ 1.0, 1.0 ], [ 1, 1 ], [ 1, 1 ] ]
+    n_layers: 3                          # try different
+    scale_feature_layer: 1
+  data:
+    <<: *CLOTH_DATA
+
+  inference:
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "??"
+
+
+al: &al #
+  <<: *DEFAULT
+  name: '0330_01_uno_al'
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 100
+    lr: 0.001
+  net:
+    <<: *DEFAULT_NET
+    hidden_channels: 64
+    projection_channels: 128
+    uno_out_channels: [ 64, 64, 64 ]
+    uno_n_modes: [ [ 16, 16 ], [ 16, 16 ], [ 16, 16 ] ]
+    uno_scalings: [ [ 1.0, 1.0 ], [ 1, 1 ], [ 1, 1 ] ]
+    n_layers: 3                          # try different
+    scale_feature_layer: 1
+  data:
+    <<: *CLOTH_DATA
+
+  inference:
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "2025-03-25 22:32:40"
+    height: 64
+    width: 64
+    iterations_per_timestep: 50
+
+
+################################################
+local:
+  <<: *aa
+  opt:
+    <<: *DEFAULT_OPT
+    batch_size: 3
+    cuda: 0
+    plot: 0
+    optimizer: adam
+
+#  data:
+#    <<: *DEFAULT_DATA
+
+  # Weights and biases
+  wandb:
+    <<: *DEFAULT_WANDB
+    log: false
+
+  inference:
+    <<: *inference_o
+    renderer: "PyTorch3D"
+    sft:
+      <<: *DEFAULT_SFT
+      json: ["scenes/R1.json"]
+      evaluate: 0
+      optimize_uv: 0
+      debug: 1
+    cuda: 0
+
+debug:
+  <<: *k
+  opt:
+    <<: *DEFAULT_OPT
+    batch_size: 10
+    cuda: 0
+    plot: 0
+
+#  data:
+#    <<: *DEFAULT_DATA
+
+  # Weights and biases
+  wandb:
+    <<: *DEFAULT_WANDB
+    log: false

@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from get_param import params,toCuda,toCpu,device
+from get_param2 import params,toCuda,toCpu,device
 from derivatives import dx,dy,dx_left,dy_top,dx_right,dy_bottom,laplace,laplace_detach,map_vx2vy_left,map_vy2vx_top,map_vx2vy_right,map_vy2vx_bottom,normal2staggered,rot_mac
 from utils import normalize_grads
 from PIL import Image
@@ -21,7 +21,7 @@ backgrounds = {"empty":background1,"cave1":background2,"cave2":background3}
 
 #Attention: x/y are swapped (x-dimension=1; y-dimension=0)
 
-def loss(a_old,a_new,p_new,bc_mask,bc_values,rho=1,mu=1,dt=params.dt):
+def loss(a_old,a_new,p_new,bc_mask,bc_values,rho=1,mu=1,dt=params.cloth.dt):
 	"""
 	rho = mu = dt = 1
 	
@@ -50,11 +50,11 @@ def loss(a_old,a_new,p_new,bc_mask,bc_values,rho=1,mu=1,dt=params.dt):
 	loss_bound = torch.mean((cond_mask_mac*(v_new-bc_values)**2)[:,:,1:-1,1:-1],dim=(1,2,3))
 	
 	# explicit / implicit / IMEX integration schemes
-	if params.integrator == "explicit":
+	if params.Fluid.integrator == "explicit":
 		v = v_old
-	if params.integrator == "implicit":
+	if params.Fluid.integrator == "implicit":
 		v = v_new
-	if params.integrator == "imex":
+	if params.Fluid.integrator == "imex":
 		v = (v_new+v_old)/2
 	
 	# compute loss for momentum equation
@@ -72,14 +72,14 @@ def loss(a_old,a_new,p_new,bc_mask,bc_values,rho=1,mu=1,dt=params.dt):
 	loss_mean_a = torch.mean(a_new,dim=(1,2,3))**2
 	loss_mean_p = torch.mean(p_new,dim=(1,2,3))**2
 	
-	loss = normalize_grads(params.loss_bound*loss_bound) + normalize_grads(params.loss_nav*loss_nav)
+	loss = normalize_grads(params.Fluid.loss_bound*loss_bound) + normalize_grads(params.Fluid.loss_nav*loss_nav)
 	
-	if params.loss_mean_a:
-		loss = loss + normalize_grads(params.loss_mean_a*loss_mean_a)
-	if params.loss_mean_p:
-		loss = loss + normalize_grads(params.loss_mean_p*loss_mean_p)
-	if params.regularize_grad_p:
-		loss = loss + normalize_grads(params.regularize_grad_p*regularize_grad_p)
+	if params.Fluid.loss_mean_a:
+		loss = loss + normalize_grads(params.Fluid.loss_mean_a*loss_mean_a)
+	if params.Fluid.loss_mean_p:
+		loss = loss + normalize_grads(params.Fluid.loss_mean_p*loss_mean_p)
+	if params.Fluid.regularize_grad_p:
+		loss = loss + normalize_grads(params.Fluid.regularize_grad_p*regularize_grad_p)
 	
 	"""
 	for value,name in zip([bc_values,cond_mask_mac,flow_mask_mac,v_old,v_new,loss_bound,v,loss_nav,regularize_grad_p,loss_mean_a,loss_mean_p,loss],["bc_values","cond_mask_mac","flow_mask_mac","v_old","v_new","loss_bound","v","loss_nav","regularize_grad_p","loss_mean_a","loss_mean_p","loss"]):
@@ -139,8 +139,8 @@ class DatasetFluid:
 		
 		self.padding_x,self.padding_y = 5,3
 		
-		mu_range = [params.min_mu,params.mu] if mu_range is None else mu_range
-		rho_range = [params.min_rho,params.rho] if rho_range is None else rho_range
+		mu_range = [params.Fluid.min_mu,params.Fluid.mu] if mu_range is None else mu_range
+		rho_range = [params.Fluid.min_rho,params.Fluid.rho] if rho_range is None else rho_range
 		self.mu_range = log_range_params(mu_range)
 		self.rho_range = log_range_params(rho_range)
 		#self.mus = toCuda(torch.zeros(self.dataset_size,1,1,1))

@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from get_param import params,toCuda,toCpu,device
+from get_param2 import params,toCuda,toCpu,device
 from utils import log_range_params, range_params
 from derivatives import laplace, laplace_detach, dx, dy
 
@@ -16,7 +16,7 @@ tell(): tell update step for velocities (positions are updated internally) => re
 
 # CODO: spatially varying stiffness / shearing / bending parameters
 
-dt = params.dt
+dt = params.cloth.dt
 
 def loss(c_old,c_new,v,R,D,bc_mask,bc_values):
 	"""

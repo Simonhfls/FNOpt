@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from get_param import params,toCuda,toCpu,device
+from get_param2 import params,toCuda,toCpu,device
 from utils import log_range_params, range_params
 from derivatives import laplace, laplace_detach, dx, dy
 from derivatives import laplace_periodic, laplace_periodic_detach, dx_periodic, dy_periodic
@@ -54,9 +54,9 @@ class InitPeriodicCond2d(): # taken from: https://github.com/cics-nd/ar-pde-cnn/
 		# generate on-the-fly
 		return self.nsamples
 
-ic = InitPeriodicCond2d(params.height,1)
+ic = InitPeriodicCond2d(params.data.height,1)
 
-dt = params.dt
+dt = params.cloth.dt
 
 def loss(v_old,v_new,mu,bc_mask,bc_values):
 	"""
@@ -86,7 +86,7 @@ class DatasetBurgers:
 		self.batch_size = batch_size
 		self.dataset_size = dataset_size
 		self.average_sequence_length = average_sequence_length
-		mu_range = [params.min_mu,params.mu] if mu_range is None else mu_range
+		mu_range = [params.Fluid.min_mu,params.Fluid.mu] if mu_range is None else mu_range
 		self.mu_range = log_range_params(mu_range)
 		
 		# grid utility

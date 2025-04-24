@@ -18,6 +18,9 @@ def get_params():
 	:return: parameter-Namespace
 	"""
 	parser = argparse.ArgumentParser(description='train / test a pytorch model to simulate cloth')
+	parser.add_argument('--name', type=str, default='Metamizer_000', help='training run name')
+	parser.add_argument('--wandb', default=False, type=str2bool, help='log models / metrics during training (wandb)')
+	parser.add_argument('--wandb_root_dir',  type=str, default='./', help='wandb root directory')
 
 	# Network parameters
 	parser.add_argument('--net', default="Metamizer", type=str, help='network to train (default: Metamizer)', choices=["Metamizer","SymmetricMetamizer"])
@@ -30,11 +33,12 @@ def get_params():
 	# Training parameters
 	parser.add_argument('--n_epochs', default=100, type=int, help='number of epochs (after each epoch, the model gets saved)')
 	parser.add_argument('--n_batches_per_epoch', default=500, type=int, help='number of batches per epoch (default: 5000)')
-	parser.add_argument('--iterations_per_timestep', default=1000, type=int, help='number of batches per epoch (default: 1000)') # should be much less later (maybe 3) or adaptive
-	parser.add_argument('--batch_size', default=100, type=int, help='batch size (default: 100)')
+	# parser.add_argument('--iterations_per_timestep', default=1000, type=int, help='number of batches per epoch (default: 1000)') # should be much less later (maybe 3) or adaptive
+	parser.add_argument('--iterations_per_timestep', default=10, type=int, help='number of batches per epoch (default: 1000)') # should be much less later (maybe 3) or adaptive
+	parser.add_argument('--batch_size', default=3, type=int, help='batch size (default: 100)')
 	parser.add_argument('--average_sequence_length', default=1000, type=int, help='average sequence length in dataset (default: 1000)')
 	parser.add_argument('--dataset_size', default=500, type=int, help='size of dataset (default: 1000)')
-	parser.add_argument('--cuda', default=True, type=str2bool, help='use GPU')
+	parser.add_argument('--cuda', default=False, type=str2bool, help='use GPU')
 	parser.add_argument('--ema_beta', default=0.995, type=float, help='ema beta (default: 0.995)')
 	parser.add_argument('--ema_update_after_step', default=None, type=int, help='only after this number of .update() calls will it start updating EMA (default: 100)')
 	parser.add_argument('--ema_update_every', default=1, type=int, help='how often to actually update EMA, to save on compute (default: 1)')
@@ -51,9 +55,11 @@ def get_params():
 	# Cloth parameters
 	parser.add_argument('--stiffness', default=1000, type=float, help='stiffness parameter of cloth')
 	parser.add_argument('--min_stiffness', default=100, type=float, help='min stiffness range parameter of cloth (default: same as stiffness)')
-	parser.add_argument('--shearing', default=100, type=float, help='shearing parameter of cloth')
+	# parser.add_argument('--shearing', default=100, type=float, help='shearing parameter of cloth')
+	parser.add_argument('--shearing', default=10, type=float, help='shearing parameter of cloth')
 	parser.add_argument('--min_shearing', default=1, type=float, help='min shearing range parameter of cloth (default: same as shearing)')
 	parser.add_argument('--bending', default=10, type=float, help='bending parameter of cloth')
+	# parser.add_argument('--bending', default=0.01, type=float, help='bending parameter of cloth')
 	parser.add_argument('--min_bending', default=0.01, type=float, help='min bending range parameter of cloth (default: same as bending)')
 	parser.add_argument('--a_ext', default=1, type=float, help='gravitational constant (external acceleration)')
 	parser.add_argument('--min_a_ext', default=None, type=float, help='min gravitational constant (default: same as a_ext)')
@@ -95,7 +101,8 @@ def get_params():
 	#parser.add_argument('--load_index', default=None, type=int, help='index of run to load (default: None)')
 	parser.add_argument('--load_optimizer', default=False, type=str2bool, help='load state of optimizer (default: True)')
 	parser.add_argument('--load_latest', default=False, type=str2bool, help='load latest version for training (if True: leave load_date_time and load_index None. default: False)')
-	
+
+
 	# parse parameters
 	params = parser.parse_args()
 	
@@ -128,9 +135,6 @@ def get_params():
 	
 	return params
 
-params = get_params()
-device = 'cuda' if params.cuda else 'cpu'
-
 def get_hyperparam(params):
 	if params.net == "SymmetricMetamizer":
 		return f"net {params.net}; sg: {params.symmetry_group}; hs {params.hidden_size}; dt {params.dt};"
@@ -155,3 +159,6 @@ def toDType(x):
 	if type(x) is tuple or type(x) is list:
 		return [xi.type(params.dtype) for xi in x]
 	return x.type(params.dtype)
+
+params = get_params()
+device = 'cuda' if params.cuda else 'cpu'

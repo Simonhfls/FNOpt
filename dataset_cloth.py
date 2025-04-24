@@ -270,11 +270,11 @@ class DatasetCloth:
 		#self.bc_masks[index,:,0,-1] = 1
 		#self.bc_masks[index,:,-1,-1] = 1
 		self.bc_masks[index,:,self.h//2,self.w//2] = 1
+		# self.bc_masks[index,:,self.h//5,self.w//5] = 1
 		self.bc_positions[index] = self.x[index].clone()
 		self.bc_positions_orig[index] = self.x[index].clone()
 		
 		# external forces
-		
 		#self.a_exts[index] = torch.exp(self.a_ext_range[0]+torch.rand(1)*self.a_ext_range[1]) # TODO: init with gravity
 		self.g_vect[index,:,0,0] = torch.tensor([0,0,-1.0],device=device)
 		self.a_exts[index,:,:,:] = self.g_vect[index]
@@ -290,7 +290,7 @@ class DatasetCloth:
 		# update boundary conditions
 		self.bc_positions_orig[index] = torch.einsum("ab,bcd->acd",self.rot_speed[index],self.bc_positions_orig[index])
 		self.bc_positions[index] = self.bc_positions_orig[index]*(torch.cos(self.T[index]*self.pinch_freq[index])*0.4+0.6) + torch.sin(self.T[index]*self.translation_freq[index])*self.translation_amp[index]
-		
+
 		# apply boundary conditions
 		self.x[index] = self.bc_masks[index] * self.bc_positions[index] + (1-self.bc_masks[index]) * self.x[index]
 		self.v[index] = (1-self.bc_masks[index]) * self.v[index]
@@ -328,7 +328,6 @@ class DatasetCloth:
 		with torch.enable_grad():
 			# compute gradients wrt accelerations
 			asked_grads = torch.zeros(self.batch_size,3,self.h,self.w,device=device,requires_grad=True)
-			
 			l,_ = loss(self.x[self.indices],
 				self.v[self.indices],
 				self.a[self.indices] + asked_grads,
@@ -342,7 +341,7 @@ class DatasetCloth:
 		
 		return asked_grads.grad, [self.hidden_states[i] for i in self.indices]
 	
-	def tell(self,step, hidden_states=None):
+	def tell(self, step, hidden_states=None):
 		"""
 		:step: update step for accelerations for gradients given by ask
 		:hidden_states: list of hidden states that are returned in following ask() calls => this is helpful to store the optimizer state
@@ -351,11 +350,11 @@ class DatasetCloth:
 		hidden_states = [None for _ in self.indices] if hidden_states is None else hidden_states
 		
 		self.iterations[self.indices] = self.iterations[self.indices] + 1
-		
+
 		acc = self.a[self.indices] + step
 		self.a[self.indices] = acc.detach()
-		
-		# compute loss => CODO: scaling of loss?
+
+		# compute loss => CODO: scaling of loss? TODO no need if not training
 		l, E_int = loss(self.x[self.indices],self.v[self.indices],acc,self.a_exts[self.indices],self.bc_masks[self.indices],self.bc_positions[self.indices],self.M,self.stiffnesses[self.indices],self.shearings[self.indices],self.bendings[self.indices])
 		
 		# TODO: set bc?
@@ -376,3 +375,4 @@ class DatasetCloth:
 			self.reset_i = (self.reset_i+1)%self.dataset_size
 			
 		return torch.mean(l)
+

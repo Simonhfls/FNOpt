@@ -23,6 +23,8 @@ default: &DEFAULT
     joint_factorization: False
     fno_block_precision: 'full'           # or 'half', 'mixed'
     stabilizer: None                      # try 'tanh'
+    positional_embedding: grid
+    avg_pool: 0
     dtype: float32
 
 
@@ -34,7 +36,7 @@ default: &DEFAULT
   data: &DEFAULT_DATA
     dataset_size: 1000
     average_sequence_length: 1000
-    n_batches_per_epoch: 5000  # default is 5000 or 501?
+    n_batches_per_epoch: 5000
 
     height: 100
     width: 100
@@ -136,17 +138,20 @@ default: &DEFAULT
     framerate: 50
     height: 100
     width: 100
+    iterations_per_timestep: 30
+    device: cuda
     material:
       stretching: 1000
       shearing: 10
-      bending: 10
+      bending: 0.5
     sft: &DEFAULT_SFT
-#      json: [ "scenes/R1.json", "scenes/R2.json","scenes/R3.json","scenes/R4.json","scenes/R5.json","scenes/R6.json","scenes/R7.json","scenes/R8.json","scenes/R9.json","scenes/S1_res32.json","scenes/S2_res32.json","scenes/S3_res32.json","scenes/S4_res32.json" ]
-      json: ["scenes/S1_res32.json", "scenes/S2_res32.json", "scenes/S3_res32.json", "scenes/S4_res32.json"]
-#      json: ["scenes/R1.json"]
+#      json: [ "sft/scenes/R1.json", "sft/scenes/R2.json","sft/scenes/R3.json","sft/scenes/R4.json","sft/scenes/R5.json","sft/scenes/R6.json","sft/scenes/R7.json","sft/scenes/R8.json","sft/scenes/R9.json","sft/scenes/S1_res32.json","sft/scenes/S2_res32.json","sft/scenes/S3_res32.json","sft/scenes/S4_res32.json" ]
+#      json: ["sft/scenes/S1_res32.json", "sft/scenes/S2_res32.json", "sft/scenes/S3_res32.json", "sft/scenes/S4_res32.json"]
+      json: ["sft/scenes/S1_res100.json"]
+#      json: ["sft/scenes/R1.json"]
       evaluate: 1
       optimize_uv: 1
-      debug: 0
+      debug: 1
       save_mesh: 1
       n_epochs_opt: 250
       debug_n_save: 100
@@ -154,24 +159,81 @@ default: &DEFAULT
       save_acc_heatmap: 0
       new_frame_period: 5
 
+
       lr: &DEFAULT_lr
-        stretching: 5e1
-        shearing: 1e-1
-        bending: 1e-2
-        external: 5e-2
-        vertex: 1e-3
-        uv: 2e-4
+        stretching: 5e1   # 5e1
+        shearing: 1e-1    # 1e-1
+        bending: 1e-2     # 1e-2
+        external: 5e-1    # 5e-2
+        vertex: 1e-2      # 1e-3
+        uv: 2e-4          # 2e-4
 
       lc: &DEFAULT_lc  # loss coefficients
         rgb: 1
         sil: 1
         shift: 1e-2
-
+        uv_smooth: 0
     rollout: &DEFAULT_ROLLOUT
-      n_frames: 600
+      n_frames: 300
       save_render: 1
+      save_render_metamizer: 1
+      using_handle_traj: 0
       save_acc_heatmap: 1
-      json: ["sft/scenes/S1_res48.json"]
+      wind_density: 0.0
+      json: ["sft/scenes/S1_res100.json"]
+      input_data:
+        motion_code: debug    # [debug, regular, full, fancy]
+        mode: arbitrary       # [arbitrary, with_gt]
+        obj_code: square_1024
+
+
+rollout_handle_full: &rollout_handle_full
+  <<: *DEFAULT_ROLLOUT
+  json: ["sft/scenes/S1_res32_motion_traj_mgnrp.json"]
+  save_render: 0
+  save_acc_heatmap: 0
+  save_render_3d: 1
+  using_handle_traj: 1
+  input_data:
+    motion_code: full
+    mode: arbitrary       # [arbitrary, with_gt]
+    obj_code: square_1024
+
+rollout_handle_regular: &rollout_handle_regular
+  <<: *DEFAULT_ROLLOUT
+  json: ["sft/scenes/S1_res32_motion_traj_mgnrp.json"]
+  save_render: 0
+  save_acc_heatmap: 0
+  save_render_3d: 1
+  using_handle_traj: 1
+  input_data:
+    motion_code: regular
+    mode: arbitrary       # [arbitrary, with_gt]
+    obj_code: square_1024
+
+rollout_handle_fancy: &rollout_handle_fancy
+  <<: *DEFAULT_ROLLOUT
+  json: ["sft/scenes/S1_res32_motion_traj_mgnrp.json"]
+  save_render: 0
+  save_acc_heatmap: 0
+  save_render_3d: 1
+  using_handle_traj: 1
+  input_data:
+    motion_code: fancy
+    mode: arbitrary       # [arbitrary, with_gt]
+    obj_code: square_1024
+
+rollout_handle_debug: &rollout_handle_debug
+  <<: *DEFAULT_ROLLOUT
+  json: ["sft/scenes/S1_res32_motion_traj_mgnrp.json"]
+  save_render: 0
+  save_acc_heatmap: 0
+  save_render_3d: 1
+  using_handle_traj: 1
+  input_data:
+    motion_code: debug
+    mode: with_gt       # [arbitrary, with_gt]
+    obj_code: square_1024
 
 
 
@@ -194,7 +256,7 @@ a: &a
     <<: *DEFAULT_INFERENCE
     load_date_time: "2025-03-21 18:59:41"
     average_sequence_length: 100
-    iterations_per_timestep: 10
+
 
 
 b: &b
@@ -219,7 +281,7 @@ b: &b
     <<: *DEFAULT_INFERENCE
     load_date_time: "2025-03-22 22:44:02"
     average_sequence_length: 100
-    iterations_per_timestep: 10
+
 
 
 c: &c
@@ -241,7 +303,7 @@ c: &c
     <<: *DEFAULT_INFERENCE
     load_date_time: "2025-03-23 15:48:22"
     average_sequence_length: 100
-    iterations_per_timestep: 10
+
 
 d: &d
   <<: *DEFAULT
@@ -267,16 +329,42 @@ d: &d
     <<: *DEFAULT_INFERENCE
     load_date_time: "2025-03-30 21:38:15"
     average_sequence_length: 500
-    iterations_per_timestep: 30
+
     height: 100
     width: 100
 
-
-
-xxx: &xxx
+e: &e
   <<: *DEFAULT
-  name: '0330_01_fno_d'
+  name: '0427_01_fno_e'
   net:
+    <<: *DEFAULT_NET
+    n_modes_height: 8                    # try smaller
+    n_modes_width: 8
+    hidden_channels: 64                  # try different
+    projection_channels: 64
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 1
+  cloth:
+    <<: *DEFAULT_CLOTH
+  data:
+    <<: *DEFAULT_DATA
+
+  inference: &inference_e
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "2025-04-27 21:04:59"
+    average_sequence_length: 500
+
+    height: 100
+    width: 100
+    postfix: "e"
+
+
+
+e2: &e2   # OK (res32)
+  <<: *DEFAULT
+  name: '0501_01_fno_e2_res32'
+  net: &net_e2
     <<: *DEFAULT_NET
     n_modes_height: 8                    # try smaller
     n_modes_width: 8
@@ -286,25 +374,423 @@ xxx: &xxx
   opt:
     <<: *DEFAULT_OPT
     clip_grad_norm: 1
-    cuda: 1
-    plot: 0
+  cloth:
+    <<: *DEFAULT_CLOTH
+  data:
+    <<: *DEFAULT_DATA
+    height: 32
+    width: 32
+  inference: &inference_e2
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "2025-05-03 21:51:14"
+    average_sequence_length: 500
+    height: 32
+    width: 32
+    postfix: "e2"
+    visualize_scaling: 0
+    visualize_grads: 0
+    sft:
+      <<: *DEFAULT_SFT
+      json: [ "sft/scenes/S1_res32.json" ]
+      lr:
+        stretching: 5e1   # 5e1
+        shearing: 1e-1    # 1e-1
+        bending: 1e-2     # 1e-2
+        external: 1e-1    # 5e-2
+        vertex: 5e-3      # 1e-3
+        uv: 2e-4          # 2e-4
+    rollout:
+#      <<: *DEFAULT_ROLLOUT
+#      json: ["sft/scenes/S1_res32.json"]
+      <<: *rollout_handle_full
+
+
+e2b: &e2b
+  <<: *e2
+  name: '0610_01_fno_e2b_res32'
+  inference: &inference_e2b
+    <<: *inference_e2
+    load_date_time: "2025-06-10 02:53:03"
+    postfix: "e2b"
+    height: 32
+    width: 32
+    visualize_scaling: 1
+    visualize_grads: 1
+
+    rollout:
+      <<: *rollout_handle_full
+
+
+e3: &e3   # OK
+  <<: *DEFAULT
+  name: '0427_02_fno_e3'
+  net: &net_e3
+    <<: *DEFAULT_NET
+    n_modes_height: 8                    # try smaller
+    n_modes_width: 8
+    hidden_channels: 64                  # try different
+    projection_channels: 64
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 1
+  cloth:
+    <<: *DEFAULT_CLOTH
+  data:
+    <<: *DEFAULT_DATA
+    dataset_size: 5000
+
+  inference: &inference_e3
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "2025-05-03 21:51:22"
+    average_sequence_length: 500
+    height: 100
+    width: 100
+    postfix: "e3"
+
+
+e4: &e4   # Mistake: res100
+  <<: *DEFAULT
+  name: '0609_e4_fno_res32'
+  net:
+    <<: *net_e3
+    stabilizer: tanh                      # try 'tanh'
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 1
+  cloth:
+    <<: *DEFAULT_CLOTH
+  data:
+    <<: *DEFAULT_DATA
+    dataset_size: 1000
+  inference:
+    <<: *inference_e3
+    load_date_time: "2025-06-09 00:48:41"
+    postfix: "e4"
+    rollout:
+      <<: *rollout_handle_debug
+
+e4b: &e4b
+  <<: *e4
+  name: '0609_e4b_fno_res32'
+  data:
+    <<: *DEFAULT_DATA
+    height: 32
+    width: 32
+  inference: &inference_e4b
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "2025-06-09 15:05:59"
+    postfix: "e4b"
+    width: 32
+    height: 32
+    rollout:
+      <<: *rollout_handle_debug
+
+
+e5: &e5  # Mistake: res100
+  <<: *DEFAULT
+  name: 0609_e5_fno_res32_stab_tanh
+  net:
+    <<: *net_e3
+    stabilizer: tanh                      # try 'tanh'
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 1
+  cloth:
+    <<: *DEFAULT_CLOTH
+  data:
+    <<: *DEFAULT_DATA
+    dataset_size: 1000
+  inference:
+    <<: *inference_e3
+    load_date_time: "2025-06-09 01:14:34"
+    postfix: "e5"
+    rollout:
+      <<: *rollout_handle_debug
+
+e5b: &e5b
+  <<: *e5
+  name: '0609_e5b_fno_res32'
+  data:
+    <<: *DEFAULT_DATA
+    height: 32
+    width: 32
+  inference:
+    <<: *inference_e3
+    load_date_time: "2025-06-09 15:06:29"
+    postfix: "e5b"
+    rollout:
+      <<: *rollout_handle_debug
+
+
+e6: &e6  # Mistake: res100
+  <<: *DEFAULT
+  name: 0609_e6_fno_res32_no_pos_emb
+  net:
+    <<: *net_e3
+    positional_embedding: null
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 1
+  cloth:
+    <<: *DEFAULT_CLOTH
+  data:
+    <<: *DEFAULT_DATA
+    dataset_size: 1000
+  inference:
+    <<: *inference_e3
+    load_date_time: "2025-06-09 01:17:01"
+    postfix: "e6"
+    rollout:
+      <<: *rollout_handle_debug
+
+
+e6b: &e6b
+  <<: *e6
+  name: '0609_e6b_fno_res32'
+  data:
+    <<: *DEFAULT_DATA
+    height: 32
+    width: 32
+  inference:
+    <<: *inference_e3
+    load_date_time: "2025-06-09 15:06:41"
+    postfix: "e6b"
+    rollout:
+      <<: *rollout_handle_debug
+
+e7: &e7  # Mistake: res100
+  <<: *DEFAULT
+  name: 0609_e7_fno_res32_dp
+  net:
+    <<: *net_e3
+    domain_padding: 0.1
+    domain_padding_mode: symmetric
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 1
+  cloth:
+    <<: *DEFAULT_CLOTH
+  data:
+    <<: *DEFAULT_DATA
+    dataset_size: 1000
+  inference:
+    <<: *inference_e3
+    load_date_time: "2025-06-09 01:15:04"
+    postfix: "e7"
+    rollout:
+      <<: *rollout_handle_debug
+
+
+e7b:
+  <<: *e7
+  name: '0609_e7b_fno_res32'
+  data:
+    <<: *DEFAULT_DATA
+    height: 32
+    width: 32
+  inference:
+    <<: *inference_e3
+    load_date_time: "2025-06-09 15:07:21"
+    postfix: "e7b"
+    rollout:
+      <<: *rollout_handle_debug
+
+e8: &e8  # Mistake: res100
+  <<: *DEFAULT
+  name: 0609_e8_fno_res32_all_components
+  net:
+    <<: *net_e3
+    stabilizer: tanh                      # try 'tanh'
+    positional_embedding: null
+    domain_padding: 0.1
+    domain_padding_mode: symmetric
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 1
+  cloth:
+    <<: *DEFAULT_CLOTH
+  data:
+    <<: *DEFAULT_DATA
+    dataset_size: 1000
+  inference:
+    <<: *inference_e3
+    load_date_time: "2025-06-09 01:15:27"
+    postfix: "e8"
+    rollout:
+      <<: *rollout_handle_debug
+
+e8b: &e8b
+  <<: *e8
+  name: '0609_e8b_fno_res32'
+  data:
+    <<: *DEFAULT_DATA
+    height: 32
+    width: 32
+  inference:
+    <<: *inference_e3
+    load_date_time: "2025-06-09 15:07:47"
+    postfix: "e8b"
+    rollout:
+      <<: *rollout_handle_debug
+
+
+e9: &e9   # bad
+  <<: *e2
+  name: '0610_e9_fno_res32_avg_pool'
+  net:
+    <<: *net_e2
+    avg_pool: 1
+  inference:
+    <<: *inference_e3
+    load_date_time: "2025-06-10 03:10:07"
+    postfix: "e9"
+    rollout:
+      <<: *rollout_handle_fancy
+
+e10: &e10
+  <<: *e2
+  name: '0610_e10_fno_res32_scale_feature_layer=1'
+  net:
+    <<: *net_e2
+    scale_feature_layer: 1
+  inference:
+    <<: *inference_e3
+    load_date_time: "2025-06-10 23:38:09"
+    postfix: "e10"
+    rollout:
+      <<: *rollout_handle_full
+
+e11: &e11
+  <<: *e2
+  name: '0610_e11_fno_res32_scale_feature_layer=2'
+  net:
+    <<: *net_e2
+    scale_feature_layer: 2
+  inference:
+    <<: *inference_e3
+    load_date_time: "2025-06-10 23:41:40"
+    postfix: "e11"
+    rollout:
+      <<: *rollout_handle_debug
+
+
+f: &f
+  <<: *DEFAULT
+  name: '0428_01_fno_f'
+  net:
+    <<: *DEFAULT_NET
+    n_modes_height: 8                    # try smaller
+    n_modes_width: 8
+    hidden_channels: 64                  # try different
+    projection_channels: 64
+    n_layers: 3
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 1
   cloth:
     <<: *DEFAULT_CLOTH
   data:
     <<: *DEFAULT_DATA
 
-  inference: &inference_d
+  inference:
     <<: *DEFAULT_INFERENCE
-    load_date_time: "???"
+    load_date_time: "2025-04-30 05:55:08"
     average_sequence_length: 500
-    iterations_per_timestep: 30
+
     height: 100
     width: 100
+    postfix: "f"
+
+
+
+g: &g
+  <<: *DEFAULT
+  name: '0428_02_fno_g'
+  net:
+    <<: *DEFAULT_NET
+    n_modes_height: 8                    # try smaller
+    n_modes_width: 8
+    hidden_channels: 64                  # try different
+    projection_channels: 64
+    n_layers: 2
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 1
+  cloth:
+    <<: *DEFAULT_CLOTH
+  data:
+    <<: *DEFAULT_DATA
+
+  inference:
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "2025-04-30 05:55:08"
+    average_sequence_length: 500
+
+    height: 100
+    width: 100
+    postfix: "g"
+
+
+h: &h
+  <<: *DEFAULT
+  name: '0428_03_fno_h'
+  net:
+    <<: *DEFAULT_NET
+    n_modes_height: 8                    # try smaller
+    n_modes_width: 8
+    hidden_channels: 32                  # try different
+    projection_channels: 32
+    n_layers: 4
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 1
+  cloth:
+    <<: *DEFAULT_CLOTH
+  data:
+    <<: *DEFAULT_DATA
+
+  inference:
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "2025-04-30 06:13:06"
+    average_sequence_length: 500
+
+    height: 100
+    width: 100
+    postfix: "h"
+
+i: &i
+  <<: *DEFAULT
+  name: '0428_04_fno_i'
+  net:
+    <<: *DEFAULT_NET
+    n_modes_height: 16                    # try smaller
+    n_modes_width: 16
+    hidden_channels: 64                  # try different
+    projection_channels: 64
+    n_layers: 2
+  opt:
+    <<: *DEFAULT_OPT
+    clip_grad_norm: 1
+  cloth:
+    <<: *DEFAULT_CLOTH
+  data:
+    <<: *DEFAULT_DATA
+
+  inference:
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "2025-04-30 08:37:35"
+    average_sequence_length: 500
+
+    height: 100
+    width: 100
+    postfix: "i"
+
+
 
 
 ################################################
 local:
-  <<: *d
+  <<: *e11
   opt:
     <<: *DEFAULT_OPT
     batch_size: 3
@@ -319,21 +805,23 @@ local:
     log: false
 
   inference:
-    <<: *inference_d
+    <<: *inference_e2b
     renderer: "PyTorch3D"
-    width: 50
+    device: cpu
+    visualize_scaling: 1
+    visualize_grads: 1
+
     sft:
       <<: *DEFAULT_SFT
-      json: ["scenes/R1.json"]
+      json: ["sft/scenes/R1.json"]
       evaluate: 0
       optimize_uv: 0
       debug: 1
-    cuda: 0
 
 
 
 debug:
-  <<: *xxx
+  <<: *e
   opt:
     <<: *DEFAULT_OPT
     batch_size: 10
@@ -342,3 +830,23 @@ debug:
   wandb:
     <<: *DEFAULT_WANDB
     log: false
+
+
+handle:
+  <<: *e2
+  inference:
+    <<: *inference_e2
+    rollout:
+      <<: *rollout_handle_debug
+      wind_density: 1.0
+
+handle_debug:
+  <<: *e2
+  inference:
+    <<: *inference_e2
+    visualize_scaling: 1
+    visualize_grads: 1
+    rollout:
+      <<: *rollout_handle_debug
+      wind_density: 1.0
+

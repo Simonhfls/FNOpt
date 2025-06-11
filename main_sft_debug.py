@@ -12,7 +12,7 @@ from matplotlib.colors import LightSource
 from Logger import Logger
 from dataset_cloth2 import DatasetCloth
 from dataset_utils import DatasetToSingleChannel
-from get_param2 import params
+from get_param2 import params, device
 from metamizer import get_Net2 as get_Net
 from sft import evaluation
 from sft.render import opencv_projection, ComputeViewMatrix, render_pytorch, render_nvdiffrast
@@ -377,7 +377,6 @@ def main():
     random.seed(params.data.seed)
     scene_list = params.inference.sft.json
     evaluate = params.inference.sft.evaluate
-    device = torch.device("cuda" if params.inference.cuda else "cpu")
     for file_name in scene_list:
         scene = loadJson(file_name)
         opt = Optimization(save_render=params.inference.sft.save_render, save_mesh=params.inference.sft.save_mesh, debug=params.inference.sft.debug, device=device)
@@ -393,7 +392,6 @@ def main():
 if __name__ == '__main__':
     params.wandb.log = False    # disable wandb logging
     params.training = False
-    device = 'cuda' if params.inference.cuda else 'cpu'
     print('device:', device)
     print('params:', params)
     main()

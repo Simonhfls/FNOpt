@@ -52,6 +52,8 @@ def get_hyperparam(params):
 		return f"net {params.net.name}; hs {params.net.hidden_channels}; dt {params.cloth.dt};"
 	if params.net.name == "MeshGraphNets":
 		return f"net {params.net.name}; hs {params.flags.message_passing_aggregator}; mp {params.flags.message_passing_steps};"
+	if params.net.name == "MeshGraphNets2":
+		return f"net {params.net.name}; mp {params.net.message_passing_steps};"
 	return f"net {params.net.name}; hs {params.net.hidden_size}; dt {params.cloth.dt};"
 
 def get_load_hyperparam(params):
@@ -61,6 +63,8 @@ def get_load_hyperparam(params):
 		return f"net {params.net.name}; hs {params.net.hidden_channels}; dt {params.cloth.dt};"
 	if params.net.name == "MeshGraphNets":
 		return f"net {params.net.name}; hs {params.flags.message_passing_aggregator}; mp {params.flags.message_passing_steps};"
+	if params.net.name == "MeshGraphNets2":
+		return f"net {params.net.name}; mp {params.net.message_passing_steps};"
 	return f"net {params.net.name}; hs {params.net.hidden_size}; dt {params.cloth.dt};"
 
 def toCuda(x):
@@ -87,7 +91,7 @@ def get_params():
 				# 'fno_vertex.yaml', config_name='local', config_folder=config_folder
 				# 'uno_vertex.yaml', config_name='local', config_folder=config_folder
 				'metamizer.yaml', config_name='local', config_folder=config_folder
-				# 'meshgraphnets.yaml', config_name='local', config_folder=config_folder
+				# 'meshgraphnets2.yaml', config_name='local', config_folder=config_folder
 
 			),
 			ArgparseConfig(infer_types=True, config_name=None, config_file=None),
@@ -102,5 +106,6 @@ def get_params():
 
 
 params = get_params()
-device = 'cuda' if params.opt.cuda else 'cpu'
-cuda = True if device == 'cuda' else False
+# device = 'cuda' if params.opt.cuda else 'cpu'
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+cuda = True if torch.cuda.is_available() else False

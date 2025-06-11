@@ -6,23 +6,17 @@ import random
 import subprocess
 import sys
 import os
-
-from matplotlib.colors import LightSource
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from Logger import Logger
-from dataset_cloth2 import DatasetCloth
+from dataset_cloth3 import DatasetCloth
 from dataset_utils import DatasetToSingleChannel
-from get_param2 import params
+from get_param2 import params, device
 from metamizer import get_Net2 as get_Net
 from sft import evaluation
 from sft.render import opencv_projection, ComputeViewMatrix, render_pytorch, render_nvdiffrast
-from sft.utils import update_obj_vertices, loadJson, grid_to_trimesh_faces
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from matplotlib import pyplot as plt
-from configmypy import ConfigPipeline, YamlConfig, ArgparseConfig
+from sft.utils import loadJson
 import numpy as np
-from ema_pytorch import EMA
 from pytorch3d.transforms import axis_angle_to_matrix
 from torchvision.transforms.functional import gaussian_blur
 import time
@@ -34,24 +28,19 @@ from pytorch3d.renderer import (
     look_at_view_transform,
     FoVPerspectiveCameras,
     PerspectiveCameras, )
-from pytorch3d.io import load_obj, save_obj
-
-
+from pytorch3d.io import load_obj
 
 torch.autograd.set_detect_anomaly(True)
 
-
-def test_grad_tensor(x):
-    print('is_leaf:', x.is_leaf, '| requires_grad:', x.requires_grad, ', grad:',
-          x.grad if x.grad is not None else 'None')
-
-
 class Optimization():
-    def __init__(self, save_render=False, save_mesh=False, debug=False, device='cuda'):
+    def __init__(self, save_render=False, save_mesh=False, debug=False, seq_desc='default_seq', device='cuda'):
         self.save_render = save_render
         self.save_mesh = save_mesh
         self.debug = debug
         self.device = device
+        self.dtype = params.net.dtype
+        self.seq_desc = seq_desc
+
     
     def initializeParameters(self, scene, evaluate):
         self.scene_parameters = scene
@@ -73,23 +62,25 @@ class Optimization():
         self.length_conversion = (self.mesh_resolution - 1) / self.scene_parameters["mesh_size"]  # 1m = 31 [NN-m]
         self.bc_n_x = math.ceil(self.mesh_resolution / 32)
         if self.save_render:
-            self.dir_render = os.path.abspath(os.path.dirname(self.scene_parameters["result_chamfer_file"]) + '/rendered/')
-            self.dir_rgb = os.path.join(self.dir_render, 'rgb/')
-            self.dir_acc = os.path.join(self.dir_render, 'acc/')
+            self.dir_render = os.path.abspath(os.path.dirname(self.scene_parameters["result_chamfer_file"]) + '/rendered/' + self.seq_desc)
+            self.dir_rgb = os.path.join(self.dir_render, 'rgb')
+            self.dir_acc = os.path.join(self.dir_render, 'acc')
+            print('render dir:', self.dir_render)
             if not os.path.exists(self.dir_rgb):
                 os.makedirs(self.dir_rgb)
             if not os.path.exists(self.dir_acc):
                 os.makedirs(self.dir_acc)
         if self.debug:
-            self.dir_debug = os.path.abspath(os.path.dirname(self.scene_parameters["result_chamfer_file"]) + '/debug/')
+            self.dir_debug = os.path.abspath(os.path.dirname(self.scene_parameters["result_chamfer_file"]) + '/debug/' + self.seq_desc)
             if not os.path.exists(self.dir_debug):
                 os.makedirs(self.dir_debug)
+            print('debug dir:', self.dir_debug)
         if self.save_mesh:
             self.dir_obj = os.path.dirname(os.path.dirname(self.scene_parameters['result_point_cloud_files'])) + '/obj/'
             if not os.path.exists(self.dir_obj):
                 os.makedirs(self.dir_obj)
         self.renderer = params.inference.renderer.lower()
-        print('renderer:', self.renderer)
+
 
 
     def initializeMesh(self):
@@ -173,9 +164,15 @@ class Optimization():
 
         height, width = self.image_size
 
-        camera_pos = torch.tensor(self.scene_parameters["camera_position"],  device=self.device)[None, :]
-        up_dir = torch.tensor(self.scene_parameters["camera_up"],  device=self.device)[None, :]
-        object_pos = torch.tensor(self.scene_parameters["object_position"], device=self.device)[None, :]
+        camera_pos = torch.tensor(self.scene_parameters["camera_position"],
+                                  device=self.device,
+                                  dtype=self.dtype)[None, :]
+        up_dir = torch.tensor(self.scene_parameters["camera_up"],
+                              device=self.device,
+                              dtype=self.dtype)[None, :]
+        object_pos = torch.tensor(self.scene_parameters["object_position"],
+                                  device=self.device,
+                                  dtype=self.dtype)[None, :]
 
         R, T = look_at_view_transform(eye=camera_pos, at=object_pos, up=up_dir, device=self.device)
         cameras = FoVPerspectiveCameras(device=self.device, R=R, T=T)
@@ -333,7 +330,6 @@ class Optimization():
             img = image.squeeze(0).cpu().detach().numpy()
             img = Image.fromarray((img * 255).astype(np.uint8))
             save_path = os.path.join(self.dir_rgb, str(self.frame_counter).zfill(3) + ".png")
-            # print('save path:', save_path)
             img.save(save_path)
 
         image = image.squeeze(0)
@@ -464,8 +460,8 @@ class Optimization():
 
     def step(self):
         # update vertex force
-        a_ext = torch.ones(1, 3, self.h, self.w, device=device) * self.external_forces
-        a_ext = a_ext + self.vertex_forces[:, self.frame_counter]
+        # a_ext = torch.ones(1, 3, self.h, self.w, device=device) * self.external_forces
+        a_ext = self.external_forces + self.vertex_forces[:, self.frame_counter]
         self.original_dataset.set_optimizable(a_ext, self.stretching_stiffness, self.shearing_stiffness, self.bending_stiffness)
         # print('stretch:', self.stretching_stiffness[0].item())
         # print('shear:', self.shearing_stiffness[0].item())
@@ -474,8 +470,8 @@ class Optimization():
         grads, hidden_states = self.test_dataset.ask_sft()
         update_steps, new_hidden_states = self.cloth_net(grads, hidden_states)
         _ = self.test_dataset.tell_sft(update_steps, new_hidden_states)
-        self.scales.append(new_hidden_states[0][2][0, 0, 0, 0].detach().cpu().numpy())
 
+        self.scales.append(new_hidden_states[0][2][0, 0, 0, 0].detach().cpu().numpy())
         if (self.t_iter + 1) % params.inference.iterations_per_timestep == 0:  # visualize only at a new timestep (a timestep can take several iterations to optimize)
             self.frame_counter += 1
             index = 0
@@ -483,8 +479,7 @@ class Optimization():
 
             with torch.no_grad():
                 self.positions[:] = x.view(3, -1).transpose(0, 1) / self.length_conversion
-            if self.evaluate:
-                with torch.no_grad():
+                if self.evaluate:
                     if self.real_scene:
                         self.point_clouds["ours"][self.frame_counter,:self.point_clouds["lengths"][self.frame_counter]] = evaluation.sampleMesh(self.point_clouds["lengths"][self.frame_counter].item(), self.positions,self.faces.type(torch.long),device=self.device)
                         if self.epoch_counter == params.inference.sft.n_epochs_opt - 1:
@@ -513,7 +508,6 @@ class Optimization():
             uv_diff_v = uv[1:, :, :] - uv[:-1, :, :]
             self.uv_smooth_loss = torch.mean(uv_diff_h ** 2) + torch.mean(uv_diff_v ** 2)
             self.loss += params.inference.sft.lc.uv_smooth * self.uv_smooth_loss
-
             if self.frame_counter == self.frames_per_epoch:
                 self.chamfer_distance = torch.tensor([0.0])
                 if self.evaluate:
@@ -539,8 +533,8 @@ class Optimization():
                 self.vertex_shift_loss += 0.1 * torch.mean(torch.linalg.norm(self.vertex_forces[:, :self.frames_per_epoch, :, 1:] - self.vertex_forces[:, :self.frames_per_epoch, :, :-1], dim=2) ** exponent)
                 self.vertex_shift_loss += 0.1 * torch.mean(torch.linalg.norm(self.vertex_forces[:, :self.frames_per_epoch, :, :, 1:] - self.vertex_forces[:, :self.frames_per_epoch, :, :, :-1], dim=2) ** exponent)
                 self.loss += params.inference.sft.lc.shift * self.vertex_shift_loss
-
                 self.printQuantities()
+
                 loss_norm = self.loss.detach() + 1e-3
                 self.loss = self.loss / loss_norm
                 self.loss.backward()
@@ -569,7 +563,6 @@ class Optimization():
                     self.frames_per_epoch += 1
                     if self.frames_per_epoch == self.simulation_frames:
                         print("Reached max frames")
-
         self.t_iter += 1
 
 def main():
@@ -577,20 +570,34 @@ def main():
     torch.manual_seed(params.data.seed)
     np.random.seed(params.data.seed)
     random.seed(params.data.seed)
-    print("Seed: ", params.data.seed)
     scene_list = params.inference.sft.json
     evaluate = params.inference.sft.evaluate
-    device = torch.device("cuda" if params.inference.cuda else "cpu")
+    print('\n\n\n**************************')
+    print("Seed: ", params.data.seed)
     print('device:', device)
+    print('model:', params.net.name)
+    print('renderer:', params.inference.renderer.lower())
+    print('N_iter_per_step:', params.inference.iterations_per_timestep)
+    print('dtype:', params.net.dtype)
+    print('save render:', params.inference.sft.save_render)
+    print('**************************\n\n\n')
+
     for file_name in scene_list:
         scene = loadJson(file_name)
+        # seq_desc = os.path.basename(file_name).split('.')[0]
+        seq_desc = f"{params.net.name}_{scene['mesh_resolution']}"
         time1 = time.perf_counter()
-        opt = Optimization(save_render=params.inference.sft.save_render, save_mesh=params.inference.sft.save_mesh, debug=params.inference.sft.debug, device=device)
+        opt = Optimization(save_render=params.inference.sft.save_render, save_mesh=params.inference.sft.save_mesh, debug=params.inference.sft.debug, seq_desc=seq_desc, device=device)
         max_epochs = params.inference.sft.n_epochs_opt + 1
         opt.initialize(scene=scene, max_epochs=max_epochs, evaluate=evaluate)
         while (opt.epoch_counter < max_epochs):
             opt.step()
-            torch.cuda.empty_cache()
+            # torch.cuda.empty_cache()
+            # print('no empty cache')
+            # allocated = torch.cuda.memory_allocated() / (1024 ** 2)  # MB
+            # reserved = torch.cuda.memory_reserved() / (1024 ** 2)  # MB
+            # print(f" Allocated: {allocated:.2f} MB | Reserved: {reserved:.2f} MB")
+
         print("------+--------+-----------+-------------------------+-------------------------------------------------------------------------------------")
         opt.printQuantities()
 
@@ -738,7 +745,6 @@ def main():
 if __name__ == '__main__':
     params.wandb.log = False    # disable wandb logging
     params.training = False
-    device = 'cuda' if params.inference.cuda else 'cpu'
     print('device:', device)
     print('params:', params)
 

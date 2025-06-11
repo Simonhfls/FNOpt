@@ -1,5 +1,7 @@
 import torch
 import numpy as np
+
+from dataset_utils import rotation_matrix
 from get_param import params,toCuda,toCpu,device
 from utils import log_range_params, range_params
 
@@ -13,36 +15,6 @@ tell(): tell update step for velocities (positions are updated internally) => re
 #Attention: x/y are swapped (x-dimension=1; y-dimension=0)
 
 # CODO: spatially varying stiffness / shearing / bending parameters
-
-def rotation_matrix(dyaw=0.0,dpitch=0.0,droll=0.0,device=None):
-	"""
-	:return: matrix to rotate by dpitch/dyaw/droll
-	"""
-	def tensor(x):
-		if type(x) is not torch.Tensor:
-			return torch.tensor(x,device=device)
-		return x
-	dpitch,dyaw,droll = tensor(dpitch),tensor(dyaw),tensor(droll)
-	trafo_pitch_matrix = torch.eye(3,device=device)
-	if dpitch != 0 or dpitch.requires_grad:
-		trafo_pitch_matrix[1,1] = torch.cos(dpitch)
-		trafo_pitch_matrix[1,2] = -torch.sin(dpitch)
-		trafo_pitch_matrix[2,1] = torch.sin(dpitch)
-		trafo_pitch_matrix[2,2] = torch.cos(dpitch)
-	trafo_yaw_matrix = torch.eye(3,device=device)
-	if dyaw != 0 or dyaw.requires_grad:
-		trafo_yaw_matrix[0,0] = torch.cos(dyaw)
-		trafo_yaw_matrix[0,2] = torch.sin(dyaw)
-		trafo_yaw_matrix[2,0] = -torch.sin(dyaw)
-		trafo_yaw_matrix[2,2] = torch.cos(dyaw)
-	trafo_roll_matrix = torch.eye(3,device=device)
-	if droll != 0 or droll.requires_grad:
-		trafo_roll_matrix[0,0] = torch.cos(droll)
-		trafo_roll_matrix[0,1] = -torch.sin(droll)
-		trafo_roll_matrix[1,0] = torch.sin(droll)
-		trafo_roll_matrix[1,1] = torch.cos(droll)
-	trafo_matrix = torch.matmul(torch.matmul(trafo_yaw_matrix,trafo_pitch_matrix),trafo_roll_matrix)
-	return trafo_matrix
 
 n_vertices = params.height*params.width
 L_0 = params.L_0

@@ -1,3 +1,5 @@
+import os
+
 import torch
 from torch.autograd import Function
 from torch.nn.functional import normalize
@@ -164,8 +166,82 @@ def grid_to_trimesh_faces(num_rows, num_cols):
             faces.append([v_tr, v_bl, v_tl])  # Second triangle
     return np.array(faces)
 
+def generate_ffmpeg_cmd(
+    render_dir,
+    output_file,
+    framerate,
+    n_frames,
+	output_dir=None,
+    input_pattern="*.png",
+    codec="libx264",
+    pixel_format="yuv420p"
+):
+    """
+    Generate an ffmpeg command to convert image sequence to video.
+
+    Args:
+        render_dir (str): Directory containing input images.
+        output_file (str): Output video file name (relative or absolute path).
+        framerate (int): Video frame rate.
+        n_frames (int): Number of frames to include in the video.
+        input_pattern (str, optional): Glob pattern for input images. Defaults to '*.png'.
+        codec (str, optional): Codec for video encoding. Defaults to 'libx264'.
+        pixel_format (str, optional): Pixel format. Defaults to 'yuv420p'.
+
+    Returns:
+        list: The ffmpeg command as a list of arguments.
+    """
+    if output_dir is None:
+        output_dir = render_dir
+    cmd = [
+        "ffmpeg",
+        "-y",  # Overwrite output files without asking
+        "-framerate", str(framerate),
+        "-pattern_type", "glob",
+        "-i", os.path.join(render_dir, input_pattern),
+        "-frames:v", str(n_frames),
+        "-c:v", codec,
+        "-pix_fmt", pixel_format,
+        os.path.join(output_dir, output_file)
+    ]
+    return cmd
+
+import re
+
+def get_unique_filename(base_name, output_dir, ext=".mp4"):
+    """
+    Returns a unique filename by appending _001, _002, ... if needed.
+    It detects and strips existing _### suffix before adding a new one.
+    """
+    # Split name and extension
+    base, extension = os.path.splitext(base_name)
+    # Remove any existing _NNN suffix
+    base = re.sub(r'_\d{3}$', '', base)
+
+    counter = 1
+    candidate = f"{base}{extension}"
+    while os.path.exists(os.path.join(output_dir, candidate)):
+        candidate = f"{base}_{counter:03d}{extension}"
+        counter += 1
+    return candidate
 
 
+def get_face_areas_batch(vertices, faces):
+    '''
+    Computes the area of each face in a batch of meshes
+    vertices: (batch_size, num_vertices, 3)
+    faces: (num_faces, 3)
+
+    returns: (batch_size, num_faces)
+    '''
+    v1 = vertices[:, faces[:, 0], :]  # (batch_size, num_faces, 3)
+    v2 = vertices[:, faces[:, 1], :]  # (batch_size, num_faces, 3)
+    v3 = vertices[:, faces[:, 2], :]  # (batch_size, num_faces, 3)
+    edge1 = v2 - v1
+    edge2 = v3 - v1
+    cross_product = torch.cross(edge1, edge2, dim=2)  # (batch_size, num_faces, 3)
+    area = torch.norm(cross_product, dim=2) / 2  # (batch_size, num_faces)
+    return area
 
 if __name__=='__main__':
 	# test grid_to_triangular_mesh

@@ -197,7 +197,17 @@ class Logger():
 		if type(model) is not list:
 			model = [model]
 		for i,m in enumerate(model):
-			m.load_state_dict(state['model{}'.format(i)])
+			# m.load_state_dict(state['model{}'.format(i)])
+			state_dict = state['model{}'.format(i)]
+			# replace old version "model." to "nn."
+			remapped_state_dict = {}
+			for key, value in state_dict.items():
+				if key.startswith("model."):
+					new_key = key.replace("model.", "nn.", 1)
+				else:
+					new_key = key
+				remapped_state_dict[new_key] = value
+			m.load_state_dict(remapped_state_dict, strict=True)
 		
 		if optimizer is not None:
 			if type(optimizer)is not list:

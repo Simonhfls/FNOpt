@@ -1,9 +1,12 @@
 import numpy as np
 import torch
+from matplotlib import pyplot as plt, animation
 from pytorch3d.renderer import (TexturesUV, BlendParams,
                                 MeshRasterizer, RasterizationSettings,
                                 HardPhongShader, PointLights)
 from pytorch3d.structures import Meshes
+import tqdm
+
 
 def opencv_projection(
     image_size,     # width, height
@@ -136,3 +139,85 @@ def ComputeViewMatrix(camera_position, camera_forward, camera_up):
                                dtype=np.float32)
 
     return position_matrix @ direction_matrix
+
+
+def render_single(position_list, face_info, viewport, result_path, fps):
+    plot_size = len(position_list)  # plus 1 for the gt
+    fig, axs = plt.subplots(1, plot_size, subplot_kw={'projection': '3d'})
+    if len(position_list) == 1:
+        axs = [axs]
+    fig.set_size_inches(19.2, 10.8)
+
+    azim = viewport[0]
+    elev = viewport[1]
+
+    min_length = 99999999999
+    for single_plot_list in position_list:
+        for position in single_plot_list:
+            if position.shape[0] < min_length:
+                num_steps = position.shape[0]
+
+    # num_steps = 120
+
+    # compute bounds
+    all_bounds_min = []
+    all_bounds_max = []
+    for single_plot_list in position_list:
+        for plot in single_plot_list:
+            plot = plot[:num_steps]
+            bb_min = np.squeeze(plot).min(axis=(0, 1))
+            bb_max = np.squeeze(plot).max(axis=(0, 1))
+            all_bounds_min.append(bb_min)
+            all_bounds_max.append(bb_max)
+    final_bound_min = np.stack(all_bounds_min).min(axis=0)
+    final_bound_max = np.stack(all_bounds_max).max(axis=0)
+    # get the max range
+    ran_val = (final_bound_max - final_bound_min).max()
+    # get the mean
+    mean_val = (final_bound_max + final_bound_min) / 2
+    bound = (mean_val - ran_val / 2, mean_val + ran_val / 2)
+
+    # bound = (final_bound_min, final_bound_max)
+
+    def animate(num):
+        # print(num)
+        for plot_group_index, plot_group in enumerate(position_list):
+            axs[plot_group_index].cla()
+            axs[plot_group_index].set_xlim([bound[0][0], bound[1][0]])
+            axs[plot_group_index].set_ylim([bound[0][1], bound[1][1]])
+            axs[plot_group_index].set_zlim([bound[0][2], bound[1][2]])
+
+            axs[plot_group_index].azim = azim
+            axs[plot_group_index].elev = elev
+
+            # ✅ add xyz labels and title
+            axs[plot_group_index].set_xlabel("X")
+            axs[plot_group_index].set_ylabel("Y")
+            axs[plot_group_index].set_zlabel("Z")
+
+            for plot_index, position in enumerate(plot_group):
+                pos = position[num]
+                # pos = transform_coordinates(position[num])
+
+                if plot_index == 0:
+                    alpha = 1
+                else:
+                    alpha = 0.3
+                # if ind < 7:
+                #     alpha = 1
+                #     color = 'blue'
+                # else:
+                #     alpha = 0.5
+                #     color = 'red'
+
+                axs[plot_group_index].plot_trisurf(pos[:, 0], pos[:, 1], face_info, pos[:, 2], shade=True, alpha=alpha)
+
+        fig.suptitle("azim %d | elev %d | frame %d" % (azim, elev, num))
+
+        return fig,
+
+    anima = animation.FuncAnimation(fig, animate, frames=num_steps)
+    pbar = tqdm.tqdm(total=num_steps)
+    writervideo = animation.FFMpegWriter(fps=fps)
+    anima.save(result_path, writer=writervideo,
+               progress_callback=lambda i, n: pbar.update(1))

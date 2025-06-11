@@ -463,6 +463,7 @@ class FNO2d(FNO):
             decomposition_kwargs=decomposition_kwargs,
             domain_padding=domain_padding,
             domain_padding_mode=domain_padding_mode,
+            **kwargs
         )
         self.n_modes_height = n_modes_height
         self.n_modes_width = n_modes_width

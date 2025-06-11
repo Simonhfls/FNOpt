@@ -1,12 +1,12 @@
 import os
 import sys
 sys.path.append(os.path.join(os.getcwd(), "../baseline/meshgraphnets"))
-from dataset_cloth2 import DatasetCloth
+from dataset_cloth3 import DatasetCloth
 from dataset_poisson import DatasetPoisson
 from dataset_fluid import DatasetFluid
 from dataset_diffusion import DatasetDiffusion
 from dataset_utils import DatasetToSingleChannel, DatasetConcat
-from metamizer import get_Net2 as get_Net
+from metamizer import get_Net3 as get_Net
 from Logger import Logger
 import torch
 from torch.optim import Adam, AdamW
@@ -58,9 +58,14 @@ if __name__ == '__main__':
 	wandb_init(params)
 
 	logger = Logger(get_hyperparam(params),use_csv=False,use_tensorboard=False)
+
+	print('params.cloth.load_latest', params.cloth.load_latest)
+	print('params.cloth.load_date_time', params.cloth.load_date_time)
+	print('params.cloth.load_index', params.cloth.load_index)
+
 	if params.cloth.load_latest or params.cloth.load_date_time is not None or params.cloth.load_index is not None:
 		load_logger = Logger(get_load_hyperparam(params),use_csv=False,use_tensorboard=False)
-		if params.load_optimizer:
+		if params.cloth.load_optimizer:
 			params.load_date_time, params.cloth.load_index = load_logger.load_state(metamizer,optimizer,params.cloth.load_date_time,params.cloth.load_index)
 		else:
 			params.load_date_time, params.cloth.load_index = load_logger.load_state(metamizer,None,params.cloth.load_date_time,params.cloth.load_index)
@@ -108,7 +113,6 @@ if __name__ == '__main__':
 			datasets.append(dataset_diffusion)
 			names.append(f"diffusion_{iterations_per_timestep}")
 
-
 	if params.data.use_poisson:
 		# poisson dataset
 		#dataset_poisson = DatasetPoisson(params.data.height,params.data.width,params.opt.batch_size*2,params.data.dataset_size,average_sequence_length=60)
@@ -152,10 +156,6 @@ if __name__ == '__main__':
 
 			if step % steps_per_log == 0:
 				logger.log("L", loss, epoch * params.data.n_batches_per_epoch + step)
-				if params.wandb.log:
-					wandb.log({
-						"L_total": loss
-					})
 
 			pbar.set_postfix(loss=loss.item())
 

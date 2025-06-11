@@ -21,6 +21,7 @@ resolution_tpe = params.cloth.repulsive.resolution
 f = grid_to_trimesh_faces(num_rows=resolution_tpe, num_cols=resolution_tpe)
 
 """
+V3 rewrite wandb.log()
 ask-tell interface:
 ask(): ask for batch of gradients of velocities wrt certain loss function
 tell(): tell update step for velocities (positions are updated internally) => return loss to update NN parameters
@@ -29,11 +30,12 @@ tell(): tell update step for velocities (positions are updated internally) => re
 
 # CODO: spatially varying stiffness / shearing / bending parameters
 
+
 n_vertices = params.data.height*params.data.width
 L_0 = params.cloth.L_0
 dt = params.cloth.dt
 
-def loss(x_old,v_old,acc,force,bc_masks,bc_positions,M,stiffnesses,shearings,bendings,repulsive_old=None):
+def loss(x_old, v_old, acc, force, bc_masks, bc_positions, M, stiffnesses, shearings, bendings, repulsive_old=None):
 	"""
 	:return:
 		:loss: loss values for samples in batch (shape: batch_size)
@@ -41,47 +43,52 @@ def loss(x_old,v_old,acc,force,bc_masks,bc_positions,M,stiffnesses,shearings,ben
 	"""
 	global step
 	# integrate velocity and positions
-	v_new = v_old + dt*acc
-	x_new = x_old + dt*v_new
-	
+	v_new = v_old + dt * acc
+	x_new = x_old + dt * v_new
+
 	# apply boundary conditions
-	x_new = bc_masks * bc_positions + (1-bc_masks) * x_new
-	v_new = (1-bc_masks) * v_new
-	
+	x_new = bc_masks * bc_positions + (1 - bc_masks) * x_new
+	v_new = (1 - bc_masks) * v_new
+
 	# compute energy terms
-	dx_i = x_new[:,:,1:]-x_new[:,:,:-1]
-	dx_n_i = torch.nn.functional.normalize(dx_i,dim=1)
-	dx_j = x_new[:,:,:,1:]-x_new[:,:,:,:-1]
-	dx_n_j = torch.nn.functional.normalize(dx_j,dim=1)
+	dx_i = x_new[:, :, 1:] - x_new[:, :, :-1]
+	dx_n_i = torch.nn.functional.normalize(dx_i, dim=1)
+	dx_j = x_new[:, :, :, 1:] - x_new[:, :, :, :-1]
+	dx_n_j = torch.nn.functional.normalize(dx_j, dim=1)
 
 	# stiffness energy
-	stiffness_i = torch.mean((torch.sqrt(torch.sum(dx_i[:,:3]**2,1))-L_0)**2,[1,2])
-	stiffness_j = torch.mean((torch.sqrt(torch.sum(dx_j[:,:3]**2,1))-L_0)**2,[1,2])
+	stiffness_i = torch.mean((torch.sqrt(torch.sum(dx_i[:, :3] ** 2, 1)) - L_0) ** 2, [1, 2])
+	stiffness_j = torch.mean((torch.sqrt(torch.sum(dx_j[:, :3] ** 2, 1)) - L_0) ** 2, [1, 2])
 	M_Stiff = (stiffness_i + stiffness_j)
-	E_stiff = stiffnesses*M_Stiff
-	
+	E_stiff = stiffnesses * M_Stiff
+
 	# Davids version of shearing energy
-	angle_1 = torch.arccos(torch.einsum('abcd,abcd->acd',dx_n_i[:,:,:,:-1],dx_n_j[:,:,:-1]).clamp(eps-1,1-eps))
-	angle_2 = torch.arccos(torch.einsum('abcd,abcd->acd',dx_n_i[:,:,:,:-1],dx_n_j[:,:,1:]).clamp(eps-1,1-eps) )
-	angle_3 = torch.arccos(torch.einsum('abcd,abcd->acd',dx_n_i[:,:,:,1:] ,dx_n_j[:,:,:-1]).clamp(eps-1,1-eps))
-	angle_4 = torch.arccos(torch.einsum('abcd,abcd->acd',dx_n_i[:,:,:,1:] ,dx_n_j[:,:,1:]).clamp(eps-1,1-eps) )
-	M_shear = (torch.sum((angle_1 - torch.pi/2)**2,[1,2])
-						+torch.sum((angle_2 - torch.pi/2)**2,[1,2])
-						+torch.sum((angle_3 - torch.pi/2)**2,[1,2])
-						+torch.sum((angle_4 - torch.pi/2)**2,[1,2]))
+	angle_1 = torch.arccos(
+		torch.einsum('abcd,abcd->acd', dx_n_i[:, :, :, :-1], dx_n_j[:, :, :-1]).clamp(eps - 1, 1 - eps))
+	angle_2 = torch.arccos(
+		torch.einsum('abcd,abcd->acd', dx_n_i[:, :, :, :-1], dx_n_j[:, :, 1:]).clamp(eps - 1, 1 - eps))
+	angle_3 = torch.arccos(
+		torch.einsum('abcd,abcd->acd', dx_n_i[:, :, :, 1:], dx_n_j[:, :, :-1]).clamp(eps - 1, 1 - eps))
+	angle_4 = torch.arccos(
+		torch.einsum('abcd,abcd->acd', dx_n_i[:, :, :, 1:], dx_n_j[:, :, 1:]).clamp(eps - 1, 1 - eps))
+	M_shear = (torch.sum((angle_1 - torch.pi / 2) ** 2, [1, 2])
+			   + torch.sum((angle_2 - torch.pi / 2) ** 2, [1, 2])
+			   + torch.sum((angle_3 - torch.pi / 2) ** 2, [1, 2])
+			   + torch.sum((angle_4 - torch.pi / 2) ** 2, [1, 2]))
 	E_shear = shearings * M_shear / n_vertices
-	
+
 	# Davids version of bending energy
-	bend_1 = torch.arccos(torch.einsum('abcd,abcd->acd',dx_n_i[:,:,1:]  ,dx_n_i[:,:,:-1]).clamp(eps-1,1-eps)  )
-	bend_2 = torch.arccos(torch.einsum('abcd,abcd->acd',dx_n_j[:,:,:,1:],dx_n_j[:,:,:,:-1]).clamp(eps-1,1-eps))
-	M_bend = torch.sum((bend_1 - 0)**2,[1,2])+torch.sum((bend_2 - 0)**2,[1,2])
+	bend_1 = torch.arccos(torch.einsum('abcd,abcd->acd', dx_n_i[:, :, 1:], dx_n_i[:, :, :-1]).clamp(eps - 1, 1 - eps))
+	bend_2 = torch.arccos(
+		torch.einsum('abcd,abcd->acd', dx_n_j[:, :, :, 1:], dx_n_j[:, :, :, :-1]).clamp(eps - 1, 1 - eps))
+	M_bend = torch.sum((bend_1 - 0) ** 2, [1, 2]) + torch.sum((bend_2 - 0) ** 2, [1, 2])
 	E_bend = bendings * M_bend / n_vertices
-	
+
 	# compute inertia term
-	L_inert = 0.5*torch.mean(torch.sum(M*acc**2,dim=1),[1,2])*dt**2
-	
+	L_inert = 0.5 * torch.mean(torch.sum(M * acc ** 2, dim=1), [1, 2]) * dt ** 2
+
 	# compute external forces term
-	L_ext = -torch.mean(torch.einsum('abcd,abcd->acd',acc,force*M),[1,2])*dt**2
+	L_ext = -torch.mean(torch.einsum('abcd,abcd->acd', acc, force * M), [1, 2]) * dt ** 2
 	L_repulsive = toCuda(torch.zeros(x_old.shape[0]))
 	bs = x_new.shape[0]
 
@@ -100,37 +107,33 @@ def loss(x_old,v_old,acc,force,bc_masks,bc_positions,M,stiffnesses,shearings,ben
 		# print('x_new.permute(0, 2, 3, 1).reshape(bs, -1, 3):', x_new.permute(0, 2, 3, 1).reshape(bs, -1, 3).shape)
 		repulsive_energy = vmap(lambda x: tpe_loss(x, torch.from_numpy(f)))(x_subsampled)
 		M_repulsive = (repulsive_energy - repulsive_old).square()
-		L_repulsive = params.cloth.repulsive.k * M_repulsive / n_vertices 	# TODO divide by n_vertices?
+		L_repulsive = params.cloth.repulsive.k * M_repulsive / n_vertices  # TODO divide by n_vertices?
 
-		# print(f"repulsive time: {time.time()-ts}")
-		# print('step', step, 'L_repulsive:', L_repulsive)
+	# print(f"repulsive time: {time.time()-ts}")
+	# print('step', step, 'L_repulsive:', L_repulsive)
 	else:
 		repulsive_energy = torch.zeros(bs)
 
 	# total loss
-	#loss_weights = (E_stiff + E_shear + E_bend + L_inert + 1e-3).detach()
-	#L = torch.mean(1.0/loss_weights*(E_stiff + E_shear + E_bend + L_ext + L_inert))
-	
+	# loss_weights = (E_stiff + E_shear + E_bend + L_inert + 1e-3).detach()
+	# L = torch.mean(1.0/loss_weights*(E_stiff + E_shear + E_bend + L_ext + L_inert))
+
 	E_int = E_stiff + E_shear + E_bend
 	L = E_int + L_ext + L_inert + L_repulsive
-
-	if step % 100 == 0:
-		if params.wandb.log:
-			log_dict = {
-				"L": L.mean(), "L_stiff": E_stiff.mean(),
-				"L_shear": E_shear.mean(), "L_bend": E_bend.mean(),
-				"L_ext": L_ext.mean(), "L_inert": L_inert.mean(),
-				"M_stiff": M_Stiff.mean(), "M_shear": M_shear.mean(), "M_bend": M_bend.mean()
-			}
-
-			if params.cloth.repulsive.k > 0:
-				log_dict["L_repulsive"] = L_repulsive.mean()
-				log_dict["M_repulsive"] = M_repulsive.mean()
-
-			wandb.log(log_dict, step=step)
+	loss_dict = {
+		"L": L, "L_stiff": E_stiff,
+		"L_shear": E_shear, "L_bend": E_bend,
+		"L_ext": L_ext, "L_inert": L_inert,
+		"E_int": E_int,
+		"M_stiff": M_Stiff, "M_shear": M_shear, "M_bend": M_bend
+	}
+	if params.cloth.repulsive.k > 0:
+		loss_dict["L_repulsive"] = L_repulsive
+		loss_dict["M_repulsive"] = M_repulsive
+		loss_dict["repulsive_energy"] = repulsive_energy
 
 	step += 1
-	return L, E_int, repulsive_energy
+	return loss_dict
 
 
 class DatasetCloth:
@@ -323,7 +326,7 @@ class DatasetCloth:
 		self.bc_masks[index, :, -1, 0] = 1
 		# self.bc_masks[index,:,0,-1] = 1
 		# self.bc_masks[index,:,-1,-1] = 1
-		self.bc_masks[index, :, self.h // 2, self.w // 2] = 1
+		# self.bc_masks[index, :, self.h // 2, self.w // 2] = 1 # TODO add this
 		# self.bc_masks[index,:,self.h//5,self.w//5] = 1
 		self.bc_positions[index] = self.x[index].clone()
 		self.bc_positions_orig[index] = self.x[index].clone()
@@ -366,7 +369,7 @@ class DatasetCloth:
 		# self.bc_masks[index,:,-1,-1] = 1
 		# self.bc_masks[index, :, self.h // 2, self.w // 2] = 1
 		# self.bc_masks[index,:,self.h//5,self.w//5] = 1
-		self.bc_positions[index] = self.x[index].clone()
+		self.bc_positions[index] = self.x[index].clone()		# (1, 3, h, w)
 		self.bc_positions_orig[index] = self.x[index].clone()
 		self.g_vect[index, :, 0, 0] = torch.tensor([0, 0, -1.0], device=device)
 
@@ -376,13 +379,17 @@ class DatasetCloth:
 		self.hidden_states[index] = None  # hidden state for (neural) optimizer
 		self.T[index] = 0  # time of env
 		self.v[index] = self.v_0.clone()
-		self.a = self.a.detach()
+		self.a = self.a.detach()		# TODO: why detach?
 		self.v = self.v.detach()
 		self.a[index] = 0
 
 	def set_position(self, rest_position):
 		# self.x[index] = rest_position.clone()
 		self.x = rest_position.clone().unsqueeze(0)
+
+	def set_bc_positions(self, bc_positions):
+		# set boundary conditions
+		self.bc_positions = bc_positions.unsqueeze(0)
 
 	def set_materials(self, stretch, shear, bend):
 		self.stiffnesses = stretch.unsqueeze(0)		# (1,)
@@ -397,22 +404,28 @@ class DatasetCloth:
 		self.set_external_forces(a_ext)						# (1, 3, h, w)
 		self.set_materials(stretch, shear, bend)
 
-	def update_env(self, index):
+	def update_env(self, index, bc_velocity=None):
 		# update state
 		self.v[index] += self.a[index] * dt
 		self.x[index] += self.v[index] * dt
 		self.a[index] = 0
 
-		# update boundary conditions
-		self.bc_positions_orig[index] = torch.einsum("ab,bcd->acd", self.rot_speed[index],
-													 self.bc_positions_orig[index])
-		self.bc_positions[index] = self.bc_positions_orig[index] * (
-					torch.cos(self.T[index] * self.pinch_freq[index]) * 0.4 + 0.6) + torch.sin(
-			self.T[index] * self.translation_freq[index]) * self.translation_amp[index]
+		if bc_velocity is None:
+			# update boundary conditions
+			self.bc_positions_orig[index] = torch.einsum("ab,bcd->acd", self.rot_speed[index],
+														 self.bc_positions_orig[index])
+			self.bc_positions[index] = self.bc_positions_orig[index] * (
+						torch.cos(self.T[index] * self.pinch_freq[index]) * 0.4 + 0.6) + torch.sin(
+				self.T[index] * self.translation_freq[index]) * self.translation_amp[index]
 
-		# apply boundary conditions
-		self.x[index] = self.bc_masks[index] * self.bc_positions[index] + (1 - self.bc_masks[index]) * self.x[index]
-		self.v[index] = (1 - self.bc_masks[index]) * self.v[index]
+			# apply boundary conditions
+			self.x[index] = self.bc_masks[index] * self.bc_positions[index] + (1 - self.bc_masks[index]) * self.x[index]
+			self.v[index] = (1 - self.bc_masks[index]) * self.v[index]
+		else:
+			# update boundary conditions
+			# self.bc_positions[index] = bc_positions
+			self.x[index] = self.bc_masks[index] * self.bc_positions[index] + (1 - self.bc_masks[index]) * self.x[index]
+			self.v[index] = torch.where(self.bc_masks[index].bool(), bc_velocity, self.v[index])		# set bc velocities
 
 		# TODO update external forces
 		if params.training:
@@ -446,12 +459,7 @@ class DatasetCloth:
 		with torch.enable_grad():
 			# compute gradients wrt accelerations
 			asked_grads = torch.zeros(self.batch_size, 3, self.h, self.w, device=device, requires_grad=True)
-			# print('self.stiffnesses:', self.stiffnesses.device)
-			# print('self.x:', self.x.device)
-			# print('self.v:', self.v.device)
-			# print('self.a:', self.a.device)
-			# print('self.a_exts:', self.a_exts)
-			l, _, _ = loss(self.x[self.indices],
+			loss_dict = loss(self.x[self.indices],
 						self.v[self.indices],
 						self.a[self.indices] + asked_grads,
 						self.a_exts[self.indices],
@@ -459,9 +467,9 @@ class DatasetCloth:
 						self.M, self.stiffnesses[self.indices], self.shearings[self.indices],
 						self.bendings[self.indices],self.E_repulsive[self.indices])
 
-			l = torch.sum(l)  # input grads should be independent of batch size => use sum instead of mean
+			l = torch.sum(loss_dict["L"])  # input grads should be independent of batch size => use sum instead of mean
 			l.backward()
-
+		# print(f'loss: { l.item()}, self.a: {float(torch.norm(self.a[self.indices], p=2)):.3f}')
 		return asked_grads.grad, [self.hidden_states[i] for i in self.indices]
 
 	def ask_sft(self):
@@ -475,7 +483,7 @@ class DatasetCloth:
 		with torch.enable_grad():
 			# compute gradients wrt accelerations
 			asked_grads = torch.zeros(self.batch_size, 3, self.h, self.w, device=device, requires_grad=True)
-			l, _, _ = loss(self.x[self.indices],
+			loss_dict = loss(self.x[self.indices],
 						   self.v[self.indices],
 						   self.a[self.indices] + asked_grads,
 						   self.a_exts[self.indices],
@@ -487,7 +495,7 @@ class DatasetCloth:
 						   self.bendings[self.indices],
 						   self.E_repulsive[self.indices])
 
-			l = torch.sum(l)  # input grads should be independent of batch size => use sum instead of mean
+			l = torch.sum(loss_dict["L"])  # input grads should be independent of batch size => use sum instead of mean
 
 			grads = torch.autograd.grad(
 				l, asked_grads,
@@ -509,9 +517,15 @@ class DatasetCloth:
 		self.a[self.indices] = acc.detach()
 
 		# compute loss => CODO: scaling of loss?
-		l, E_int, E_repulsive = loss(self.x[self.indices], self.v[self.indices], acc, self.a_exts[self.indices],
+		# l, E_int, E_repulsive = loss(self.x[self.indices], self.v[self.indices], acc, self.a_exts[self.indices],
+		# 				self.bc_masks[self.indices], self.bc_positions[self.indices], self.M,
+		# 				self.stiffnesses[self.indices], self.shearings[self.indices], self.bendings[self.indices], self.E_repulsive[self.indices])
+		#
+		loss_dict = loss(self.x[self.indices], self.v[self.indices], acc, self.a_exts[self.indices],
 						self.bc_masks[self.indices], self.bc_positions[self.indices], self.M,
 						self.stiffnesses[self.indices], self.shearings[self.indices], self.bendings[self.indices], self.E_repulsive[self.indices])
+
+		l, E_int = loss_dict["L"], loss_dict["E_int"]
 
 		# TODO: set bc?
 		# update step if iterations_per_timestep is reached
@@ -519,7 +533,8 @@ class DatasetCloth:
 			self.hidden_states[index] = hidden_states[i]
 			if self.iterations[index] % self.iterations_per_timestep == 0:
 				self.T[index] = self.T[index] + dt
-				self.E_repulsive[index] = E_repulsive[i].detach()
+				if params.cloth.repulsive.k > 0:
+					self.E_repulsive[index] = loss_dict["repulsive_energy"][i].detach()
 				self.update_env(index)
 				if E_int[i] > 20000 and params.training:
 					print(f'reset env:{index}, E_int: {E_int[i]:.2f}')
@@ -527,28 +542,36 @@ class DatasetCloth:
 
 		# reset environments eventually TODO: check that / reset environment, if E_int becomes too large!
 		self.step += 1
-		if self.step % (
-				self.average_sequence_length * self.iterations_per_timestep / self.batch_size) == 0:  # ca x*batch_size steps until env gets reset => TODO attention!: average_sequence_length mut be divisible by (batch_size*iterations_per_timestep)!
+		if self.step % (self.average_sequence_length * self.iterations_per_timestep / self.batch_size) == 0:  # ca x*batch_size steps until env gets reset => TODO attention!: average_sequence_length mut be divisible by (batch_size*iterations_per_timestep)!
 			self.reset_env(int(self.reset_i))
 			self.reset_i = (self.reset_i + 1) % self.dataset_size
 
+		# wandb log
+		if self.step % 100 == 0 and params.wandb.log:
+			log_keys = ["L", "L_stiff", "L_shear", "L_bend", "L_ext", "L_inert", "M_stiff", "M_shear", "M_bend"] + (["L_repulsive", "M_repulsive"] if params.cloth.repulsive.k > 0 else [])
+			log_dict = {k: loss_dict[k].mean() for k in log_keys}
+			wandb.log(log_dict, step=self.step)
+
 		return torch.mean(l)
 
-	def tell_sft(self, step, hidden_states=None):
+	def tell_sft(self, step, hidden_states=None, detach_acc=False, bc_velocity=None):
 		"""
 		being used during sft optimization.
 		"""
 		hidden_states = [None for _ in self.indices] if hidden_states is None else hidden_states
 		self.iterations[self.indices] = self.iterations[self.indices] + 1
 		acc = self.a[self.indices] + step
-		self.a[self.indices] = acc
-		# self.a[self.indices] = acc.detach()
+		if detach_acc:
+			self.a[self.indices] = acc.detach()
+		else:
+			self.a[self.indices] = acc
+
 
 		# TODO: set bc?
 		self.hidden_states[0] = hidden_states[0]
 		if self.iterations[0] % self.iterations_per_timestep == 0:
 			self.T[0] = self.T[0] + dt
-			self.update_env(0)
+			self.update_env(0, bc_velocity)
 
 		# reset environments eventually TODO: check that / reset environment, if E_int becomes too large!
 		self.step += 1

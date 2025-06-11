@@ -1,19 +1,29 @@
+"""
+V3: add ground truth for MeshgraphnetRP
+"""
+
 import math
 import os
 import sys
 import uuid
 
-from dataset_utils import DatasetToSingleChannel
-from utils import generate_ffmpeg_cmd, get_unique_filename
+from compute_forces import compute_wind_force
+from configs.config_common import motion_presets
+from dataset_utils import DatasetToSingleChannel, generate_vertex_force
+from generate_json_conf import setup_handle_traj, setup_handle_traj_gt, get_path_from_gt_input, \
+    obj_name_to_handle_ind_list_dict
+from grid_mesh import GridMesh
+from preprocess import transform_positions
+from utils import generate_ffmpeg_cmd, get_unique_filename, get_face_areas_batch
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from matplotlib.colors import LightSource
 from Logger import Logger
 from dataset_cloth3 import DatasetCloth
 from get_param2 import get_params, toCuda, get_hyperparam, params, device
-from metamizer import get_Net2 as get_Net
+from metamizer import get_Net3 as get_Net
 from sft import evaluation
-from sft.render import opencv_projection, ComputeViewMatrix, render_pytorch, render_nvdiffrast
+from sft.render import opencv_projection, ComputeViewMatrix, render_pytorch, render_nvdiffrast, render_single
 from sft.utils import loadJson, grid_to_trimesh_faces
 
 import subprocess
@@ -94,10 +104,11 @@ def render(vertices, faces, texture, uvs, faces_uvs, cameras, image_size):
 
 
 class Rollout():
-    def __init__(self, simulation_frames=500, device='cuda'):
+    def __init__(self, simulation_frames=500, input_data=None, device='cuda'):
         self.simulation_frames = simulation_frames
         self.device = device
         self.dtype = params.net.dtype
+        self.input_data = input_data
 
     def initializeParameters(self, scene, evaluate):
         self.scene_parameters = scene
@@ -169,12 +180,44 @@ class Rollout():
         self.original_uv = self.uv.clone()
         self.uv = self.uv.clone()
 
+        if self.input_data and self.input_data['motion_code']:
+            handle_ind_list = self.scene_parameters["handle_ind_list"]
+            self.handle_mask = torch.ones_like(self.rest_positions).bool()
+            for handle_ind in handle_ind_list:
+                self.handle_mask[handle_ind, :] = False
+
+            # load mgnrp mesh
+            obj_path = self.scene_parameters["mesh_file_mgnrp"]
+            verts, _, _ = load_obj(obj_path, load_textures=True, device=self.device)
+
+            if self.input_data['mode'] == 'arbitrary':
+                handle_traj = setup_handle_traj(verts, self.input_data['motion_code'], list(reversed(handle_ind_list)),50)
+            elif self.input_data['mode'] == 'with_gt':
+                gt_path = get_path_from_gt_input(self.input_data, self.scene_parameters['root_mgnrp'])
+                handle_traj_mgn = setup_handle_traj_gt(gt_path, obj_name_to_handle_ind_list_dict[self.input_data['obj_code']])
+                handle_traj = torch.zeros((handle_traj_mgn.shape[0], self.h * self.w, 3), device=self.device, dtype=self.dtype)
+                handle_traj[:, list(reversed(handle_ind_list))] = handle_traj_mgn[:, obj_name_to_handle_ind_list_dict[self.input_data['obj_code']]]
+            handle_distance_mgnrp = (handle_traj[0, handle_ind_list[0]] - handle_traj[0, handle_ind_list[1]]).norm()
+            handle_distance_ours = (self.rest_positions[0] - self.rest_positions[-self.h]).norm()
+            scale_ratio = handle_distance_ours / handle_distance_mgnrp
+            # self.handle_traj = transform_coordinates(self.handle_traj).to(self.device)
+            handle_disp = handle_traj - torch.where(self.handle_mask, handle_traj, verts)
+            self.R12 = torch.tensor([
+                [1, 0, 0.],
+                [0, 0, -1.],
+                [0., 1., 0.]
+            ], device=self.device).unsqueeze(0).repeat(handle_traj.shape[0], 1, 1)
+            self.T12 = torch.tensor([0., 0., 0.], device=self.device).unsqueeze(0).repeat(handle_traj.shape[0], 1, 1)
+            handle_disp = transform_positions(handle_disp.permute(0, 2, 1), self.R12, self.T12)
+            self.handle_traj = torch.where(self.handle_mask, torch.zeros_like(self.rest_positions), self.rest_positions) + handle_disp * scale_ratio
+            self.handle_traj = self.handle_traj.permute(0, 2, 1).reshape(self.handle_traj.shape[0], 3, self.h, self.w).to(self.device)
+            self.handle_mask = self.handle_mask.permute(1, 0).reshape(3, self.h, self.w)
+
+            self.simulation_frames = self.handle_traj.shape[0] - 1
 
     def initializeNetwork(self):
         network = toCuda(get_Net(params))
-
         logger = Logger(get_hyperparam(params), use_csv=False, use_tensorboard=False)
-
         print('load_date_time:', params.inference.load_date_time)
         date_time, index = logger.load_state(network, None, datetime=params.inference.load_date_time, index=params.inference.load_index, device=self.device)
         print(f"loaded: {date_time}, {index}")
@@ -289,7 +332,7 @@ class Rollout():
         # self.external_forces = torch.tensor(
         #     gravity * self.length_conversion / (self.time_conversion * self.time_conversion), device=self.device,
         #     dtype=torch.float32).unsqueeze(0).unsqueeze(2).unsqueeze(3)
-        self.external_forces = torch.tensor([0, 0, -1]).to(device).unsqueeze(0).unsqueeze(2).unsqueeze(3)
+        self.external_forces = torch.tensor([0, 0, -1]).to(device).unsqueeze(0).unsqueeze(2).unsqueeze(3)       # default
         # self.external_forces = torch.tensor([0, 0, -0.125]).to(device).unsqueeze(0).unsqueeze(2).unsqueeze(3)
         # self.external_forces = torch.tensor([0, 0, 0]).to(device).unsqueeze(0).unsqueeze(2).unsqueeze(3)
         # self.external_forces = torch.tensor([0, 0.5, 0.5]).to(device).unsqueeze(0).unsqueeze(2).unsqueeze(3)
@@ -310,6 +353,9 @@ class Rollout():
         # self.vertex_forces[:, :, 0, :self.h // 4, self.w * 3 // 4:] = local_force           # lower-left
 
         self.predicted_a = torch.zeros((self.simulation_frames + 1, 3, self.h, self.w), device=self.device, dtype=torch.float32)
+        self.predicted_pos = torch.zeros((self.simulation_frames + 1, self.h * self.w, 3), device=self.device, dtype=torch.float32)
+        self.predicted_pos[0] = self.rest_positions / self.length_conversion
+
         self.scales = []
         self.max_scales = []
         self.gradients = []
@@ -323,6 +369,9 @@ class Rollout():
         self.original_dataset.set_optimizable(self.external_forces, self.stretching_stiffness, self.shearing_stiffness, self.bending_stiffness)
         self.original_dataset.set_materials(self.stretching_stiffness, self.shearing_stiffness, self.bending_stiffness)
         # print('self.external_forces:', self.external_forces)
+        if self.input_data and self.input_data['motion_code']:
+            # set bc
+            self.original_dataset.set_bc_positions(self.handle_traj[self.frame_counter])
 
 
     def renderPyTorch3D(self, x_new):
@@ -386,28 +435,63 @@ class Rollout():
 
         t_end = time.perf_counter()
         print(f"Done:  Initialization in {t_end - t_start:.3f} s\n")
-        print(
-            "Epoch |  Time  |  Total t  | Loss:   Full  per Frame |  Stretch    Shear     Bend      Wind x    Wind y    Wind z    Vertex F      e3D     ")
-        print(
-            "------+--------+-----------+-------------------------+-------------------------------------------------------------------------------------")
-
         self.time = time.perf_counter()
         self.time_start = time.perf_counter()
 
     def step(self):
         # print('self.external_force, ', self.external_forces)
         a_ext = self.external_forces + self.vertex_forces[:, self.frame_counter]
+
+        ## compute air resistance force
+        if params.inference.rollout.wind_density > 0.0:
+            cloth_v = self.original_dataset.v.permute(0, 2, 3, 1).reshape(-1, 3)
+            cloth_f_area = get_face_areas_batch(vertices=self.original_dataset.x.permute(0, 2, 3, 1).reshape(1, -1, 3), faces=self.faces)          # compute face area
+            cloth_pos = self.original_dataset.x.permute(0, 2, 3, 1).reshape(-1, 3)
+            face_tensor = self.faces
+
+            wind_force = compute_wind_force(self.original_dataset.M.squeeze().reshape(-1, 1),
+                               cloth_f_area.permute(1, 0),
+                               face_tensor,
+                               cloth_v,
+                               cloth_pos,
+                               wind_density=params.inference.rollout.wind_density)
+
+            # print('wind_force:', wind_force.mean(0))
+            a_ext = a_ext + wind_force.reshape(1, self.h, self.w, 3).permute(0, 3, 1, 2) # add wind force to external forces
+
         self.original_dataset.set_optimizable(a_ext, self.stretching_stiffness, self.shearing_stiffness, self.bending_stiffness)
         grads, hidden_states = self.test_dataset.ask()
         update_steps, new_hidden_states = self.cloth_net(grads, hidden_states)
-        _ = self.test_dataset.tell(update_steps, new_hidden_states)
+
+        bc_vel = None
+        if self.input_data and self.input_data['motion_code']:
+            bc_vel = self.handle_traj[self.frame_counter] - self.handle_traj[self.frame_counter - 1] if self.frame_counter > 0 else torch.zeros_like(self.handle_traj[self.frame_counter])
+            self.original_dataset.set_bc_positions(self.handle_traj[self.frame_counter])
+        _ = self.test_dataset.tell_sft(update_steps, new_hidden_states, detach_acc=True, bc_velocity=bc_vel)
 
         self.scales.append(new_hidden_states[0][2][0, 0, 0, 0].detach().cpu().numpy())
         self.gradients.append(torch.norm(grads, p=2).detach().cpu().numpy())
+
+        # print(
+        #     f'current frame: {self.frame_counter} | '
+        #     f'gradients: {self.gradients[-1]:.3f} | '
+        #     f'scales: {self.scales[-1]:.3f} | '
+        #     f'update_steps: {float(torch.norm(update_steps, p=2)):.3f}'
+        # )
+
         if (self.t_iter + 1) % params.inference.iterations_per_timestep == 0:  # visualize only at a new timestep (a timestep can take several iterations to optimize)
             self.frame_counter += 1
+            print(
+                f'current frame: {self.frame_counter} | '
+                f'gradients: {self.gradients[-1]:.3f} | '
+                f'scales: {self.scales[-1]:.3f} | '
+                f'update_steps: {float(torch.norm(update_steps, p=2)):.3f}'
+            )
             index = 0
             x = self.original_dataset.x[index]
+
+            self.predicted_pos[self.frame_counter] = x.view(3, -1).transpose(0, 1) / self.length_conversion
+
             if params.inference.rollout.save_render_metamizer:  # visualize 3D cloth
                 x_np = x.cpu().numpy()
                 bc_masks = self.original_dataset.bc_masks[index, 0].cpu()
@@ -469,7 +553,7 @@ class Rollout():
                     # save mesh
                     mesh_path = f"{self.path_metamizer}/frame_{str(self.frame_counter).zfill(4)}.obj"
                     print('mesh_path:', mesh_path)
-                    save_obj(mesh_path, torch.from_numpy(x).permute(1, 2, 0).reshape(-1, 3), torch.from_numpy(grid_to_trimesh_faces(num_rows=params.inference.height, num_cols=params.inference.width)))
+                    save_obj(mesh_path, torch.from_numpy(x).permute(1, 2, 0).reshape(-1, 3), self.faces)
 
             if params.inference.visualize_scaling:  # visualize, how scaling changes during update steps
                 plt.figure(2)
@@ -533,26 +617,36 @@ class Rollout():
 
 
 def main():
+    simulation_frames = params.inference.rollout.n_frames
+    device = torch.device(params.inference.device)
+    scene_list = params.inference.rollout.json
+    motion_code_list = motion_presets[params.inference.rollout.input_data.motion_code] if params.inference.rollout.using_handle_traj else [None]
+    task_list = [(file_name, motion_code) for file_name in scene_list for motion_code in motion_code_list]
+
     print('\n\n\n**************************')
     print('device:', device)
     print('model:', params.net.name)
     print('renderer:', params.inference.renderer.lower())
     print('N_iter_per_step:', params.inference.iterations_per_timestep)
     print('dtype:', params.net.dtype)
+    if params.inference.rollout.using_handle_traj:
+        print('motion codes:', motion_code_list)
+        print('mode:', params.inference.rollout.input_data.mode)
     print('**************************\n\n\n')
 
-    scene_list = params.inference.rollout.json
-    simulation_frames = params.inference.rollout.n_frames
-    for file_name in scene_list:
+
+    # for file_name in scene_list:
+    for file_name, handle_traj in task_list:
         print('file_name:', file_name)
         scene = loadJson(file_name)
         time1 = time.perf_counter()
-        opt = Rollout(simulation_frames=simulation_frames, device=device)
+        input_data = dict(params.inference.rollout.input_data)
+        input_data['motion_code'] = handle_traj
+        opt = Rollout(simulation_frames=simulation_frames, input_data=input_data, device=device)
         opt.initialize(scene=scene, evaluate=False)
-        while (opt.t_iter < simulation_frames * params.inference.iterations_per_timestep):
+        while (opt.t_iter < opt.simulation_frames * params.inference.iterations_per_timestep):
             opt.step()
-        print(
-            "------+--------+-----------+-------------------------+-------------------------------------------------------------------------------------")
+        print("------+--------+-----------+-------------------------+-------------------------------------------------------------------------------------")
         time2 = time.perf_counter()
         print(f"Done in {(time2 - time1): .2f} s, per frame: {((time2 - time1) / params.inference.rollout.n_frames):.2f}s")
 
@@ -621,6 +715,7 @@ def main():
                 print(f"Error: Render directory {render_dir} is not empty or does not exist.")
 
         if params.inference.rollout.save_render_metamizer:
+            render_dir = opt.dir_rgb
             output_file = get_unique_filename(f"V_iters{params.inference.iterations_per_timestep}_res{params.inference.height}x{params.inference.width}.mp4",
                                               output_dir=os.path.dirname(render_dir))
             ffmpeg_cmd = generate_ffmpeg_cmd(
@@ -650,14 +745,60 @@ def main():
             except OSError:
                 print(f"Error: Render directory {render_dir} is not empty or does not exist.")
 
+        if handle_traj and params.inference.rollout.save_render_3d:
+            viewport_dict = {'def': (-60, 30), 'side': (-90, 90), 'front': (0, 0)}
+            face_info = GridMesh(height=opt.h, width=opt.w).generate_triangles().numpy()
+            viewport = 'def'
+            fps = params.inference.framerate
+            # render_dir = os.path.abspath(os.path.dirname(opt.scene_parameters["result_chamfer_file"]) + '/rendered_rollout_3d')
+            render_dir = os.path.abspath(f'{os.path.dirname(opt.scene_parameters["result_chamfer_file"])}/rendered_rollout_3d/{params.net.name}{params.inference.postfix}')
+            # {params.net.name}{params.inference.postfix}
+            if not os.path.exists(render_dir):
+                os.makedirs(render_dir)
+            result_file = get_unique_filename(
+                f"V_RGB_{params.net.name}{params.inference.postfix}_RES{opt.mesh_resolution}_Y{params.inference.material.stretching}_S{params.inference.material.shearing}_B{params.inference.material.bending}_WD{params.inference.rollout.wind_density}_EP{opt.load_index}_FPS{params.inference.framerate}_iters{params.inference.iterations_per_timestep}_{opt.motion_code}_{viewport}.mp4",
+                output_dir=render_dir)
+            result_path = os.path.join(render_dir, result_file)
+            print(f'saving 3d render to: {result_path}')
+            R_inv = torch.linalg.inv(opt.R12)
+            T_inv = -torch.matmul(opt.T12, R_inv.transpose(-1, -2))
+            predicted_pos = transform_positions(opt.predicted_pos.permute(0, 2, 1), R_inv, T_inv)   # transform back to the same plot orientation as MeshGraphNetRP
+            try:
+                render_single([[predicted_pos.cpu().numpy()]], face_info, viewport_dict[viewport], result_path, fps)
+            except Exception as e:
+                print(f"Error during 3D rendering: {e}")
+
+        if params.inference.visualize_scaling:  # visualize, how scaling changes during update steps
+            dpi = 200
+            plt.figure(2)
+            plt.clf()
+            stride = 1  # len(scales)//200+1
+            plt.semilogy(opt.scales[::stride])
+            plt.xlabel("iteration")
+            plt.ylabel("scale")
+            plt.legend(["scales"])
+            plt.draw()
+            plt.savefig(f"{render_dir}/V_SCALE_{params.net.name}{params.inference.postfix}_RES{opt.mesh_resolution}_Y{params.inference.material.stretching}_S{params.inference.material.shearing}_B{params.inference.material.bending}_EP{opt.load_index}_iters{params.inference.iterations_per_timestep}.png", dpi=dpi)
+        if params.inference.visualize_grads:
+            dpi = 200
+            plt.figure(3, figsize=(1600 / dpi, 800 / dpi), dpi=dpi)
+            plt.clf()
+            stride = 1  # len(scales)//200+1
+            plt.semilogy(opt.gradients[::stride])
+            plt.xlabel("iteration")
+            plt.ylabel("gradient norm")
+            plt.title(f"Gradient Norm reduction of Metamizer, {params.inference.iterations_per_timestep} iterations per timestep, {params.inference.height} x {params.inference.width}")
+            plt.draw()
+            plt.savefig(f"{render_dir}/V_GRADS_{params.net.name}{params.inference.postfix}_RES{opt.mesh_resolution}_Y{params.inference.material.stretching}_S{params.inference.material.shearing}_B{params.inference.material.bending}_EP{opt.load_index}_iters{params.inference.iterations_per_timestep}.png", dpi=dpi)
+            pass
 
 if __name__ == '__main__':
     params.wandb.log = False    # disable wandb logging
     params.training = False
 
-    device = torch.device(params.inference.device)
-
+    cuda = True if device == 'cuda' else False
     print('device:', device)
+    print('cuda:', cuda)
     if params.inference.renderer.lower() == "nvdiffrast":
         import nvdiffrast.torch as dr
     main()

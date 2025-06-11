@@ -6,7 +6,8 @@ default: &DEFAULT
     SMP_encoder_name: resnet34
     hidden_size: 20
     symmetry_group: D4
-    dtype: float64
+#    dtype: float64
+    dtype: float32
 
 
   ema:
@@ -116,16 +117,15 @@ default: &DEFAULT
     visualize_grads: 0
     postfix: "a"
     renderer: "Nvdiffrast"          # Nvdiffrast / PyTorch3D
-    framerate: 30
-    average_sequence_length: 100
+    framerate: 50
     iterations_per_timestep: 3
     height: 100
     width: 100
-    cuda: 1
+    device: cuda
     material:
       stretching: 1000
       shearing: 10
-      bending: 10
+      bending: 0.5
     sft: &DEFAULT_SFT
 #      json: [ "scenes/R1.json", "scenes/R2.json","scenes/R3.json","scenes/R4.json","scenes/R5.json","scenes/R6.json","scenes/R7.json","scenes/R8.json","scenes/R9.json","scenes/S1_res32.json","scenes/S2_res32.json","scenes/S3_res32.json","scenes/S4_res32.json" ]
 #      json: ["sft/scenes/S1_res32.json", "scenes/S2_res32.json", "scenes/S3_res32.json", "scenes/S4_res32.json"]
@@ -139,13 +139,13 @@ default: &DEFAULT
       debug_n_save: 1
       save_render: 1
       save_acc_heatmap: 0
-      new_frame_period: 10  # 5
+      new_frame_period: 5  # 5
 
       lr: &DEFAULT_lr
         stretching: 5e1   # 5e1
         shearing: 1e-1    # 1e-1
         bending: 1e-2     # 1e-2
-        external: 1       # 5e-2
+        external: 5e-1       # 5e-2
         vertex: 1e-2      # 1e-3
         uv: 2e-4          # 2e-4
 
@@ -156,10 +156,68 @@ default: &DEFAULT
         uv_smooth: 0
 
     rollout: &DEFAULT_ROLLOUT
-      n_frames: 300
+      n_frames: 1500  # 300
       save_render: 1
-      save_acc_heatmap: 1
-      json: ["sft/scenes/S1_res32.json"]
+      save_acc_heatmap: 0
+      save_render_metamizer: 0
+      save_render_3d: 0
+      using_handle_traj: 0
+      motion_code: null
+      wind_density: 3.0
+      json: ["sft/scenes/S1_res100.json"]
+      input_data:
+        motion_code: debug    # [debug, regular, full, fancy]
+        mode: arbitrary       # [arbitrary, with_gt]
+        obj_code: square_1024
+
+rollout_handle_full: &rollout_handle_full
+  <<: *DEFAULT_ROLLOUT
+  json: ["sft/scenes/S1_res32_motion_traj_mgnrp.json"]
+  save_render: 0
+  save_acc_heatmap: 0
+  save_render_3d: 1
+  using_handle_traj: 1
+  input_data:
+    motion_code: full
+    mode: arbitrary       # [arbitrary, with_gt]
+    obj_code: square_1024
+
+rollout_handle_regular: &rollout_handle_regular
+  <<: *DEFAULT_ROLLOUT
+  json: ["sft/scenes/S1_res32_motion_traj_mgnrp.json"]
+  save_render: 0
+  save_acc_heatmap: 0
+  save_render_3d: 1
+  using_handle_traj: 1
+  input_data:
+    motion_code: regular
+    mode: arbitrary       # [arbitrary, with_gt]
+    obj_code: square_1024
+
+rollout_handle_fancy: &rollout_handle_fancy
+  <<: *DEFAULT_ROLLOUT
+  json: ["sft/scenes/S1_res32_motion_traj_mgnrp.json"]
+  save_render: 0
+  save_acc_heatmap: 0
+  save_render_3d: 1
+  using_handle_traj: 1
+  input_data:
+    motion_code: fancy
+    mode: arbitrary       # [arbitrary, with_gt]
+    obj_code: square_1024
+
+rollout_handle_debug: &rollout_handle_debug
+  <<: *DEFAULT_ROLLOUT
+  json: ["sft/scenes/S1_res32_motion_traj_mgnrp.json"]
+  save_render: 0
+  save_acc_heatmap: 0
+  save_render_3d: 1
+  using_handle_traj: 1
+  input_data:
+    motion_code: debug
+    mode: with_gt       # [arbitrary, with_gt]
+    obj_code: square_1024
+
 
 
 author_ckpt1: &author_ckpt1
@@ -210,10 +268,13 @@ a1: &a1
   cloth:
     <<: *DEFAULT_CLOTH
 
-  inference:
+  inference: &inference_a1
     <<: *DEFAULT_INFERENCE
     load_date_time: "2025-03-20 10:59:22"
+    iterations_per_timestep: 10
     postfix: "a1"
+    rollout:
+      <<: *rollout_handle_debug
 
 
   data:
@@ -370,7 +431,7 @@ f: &f   # OK
   cloth:
     <<: *DEFAULT_CLOTH
     use_f_ext: 0
-  data:
+  data: &data_cloth
     <<: *DEFAULT_DATA
     use_cloth: 1
     use_fluid: 0
@@ -383,12 +444,13 @@ f: &f   # OK
     width: 100
     postfix: "f"
 
+
 f2:
   <<: *f
   name: '0424_01_cloth'
   inference:
     <<: *DEFAULT_INFERENCE
-    load_date_time: "??"
+    load_date_time: "2025-04-24 19:19:22"
     height: 100
     width: 100
     postfix: "f2"
@@ -402,20 +464,40 @@ f3:
 
   inference:
     <<: *DEFAULT_INFERENCE
-    load_date_time: "??"
+    load_date_time: "2025-04-24 21:31:21"
     height: 100
     width: 100
     postfix: "f3"
 
-f4:
+f4: &f4
   <<: *f
-  name: '0424_03_cloth_res32'
-  inference:
+  name: '0502_02_cloth_res32'
+  data:
+    <<: *data_cloth
+    height: 32
+    width: 32
+  inference: &inference_f4
     <<: *DEFAULT_INFERENCE
-    load_date_time: "??"
+    load_date_time: "2025-05-02 13:24:49"
     height: 32
     width: 32
     postfix: "f4"
+    sft:
+      <<: *DEFAULT_SFT
+      json: ["sft/scenes/S1_res32.json"]
+    rollout:
+      <<: *DEFAULT_ROLLOUT
+      json: ["sft/scenes/S1_res32.json"]
+
+f5:
+  <<: *f
+  name: '0502_01_cloth'
+  inference:
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "?"
+    height: 100
+    width: 100
+    postfix: "f5"
 
 
 h: &h
@@ -842,7 +924,6 @@ rep3_g: &rep3_g
   inference:
     <<: *DEFAULT_INFERENCE
     load_date_time: "2025-03-31 17:08:11"
-    save_obj: 1
     postfix: "rep3_g"
 
 
@@ -882,7 +963,6 @@ rep3_i: &rep3_i
   inference:
     <<: *DEFAULT_INFERENCE
     load_date_time: "2025-03-31 17:09:04"
-    save_obj: 1
     iterations_per_timestep: 50
     postfix: "rep3_i"
 
@@ -903,7 +983,6 @@ rep3_j: &rep3_j
   inference:
     <<: *DEFAULT_INFERENCE
     load_date_time: "2025-03-31 17:09:04"
-    save_obj: 1
     postfix: "rep3_j"
 
 
@@ -972,11 +1051,31 @@ rep4_c: &rep4_c
     load_date_time: "2025-04-02 22:07:11"
     postfix: "rep4_c"
 
+handle: &handle
+  <<: *f4
+  inference:
+    <<: *inference_f4
+    visualize_scaling: 1
+    visualize_grads: 1
+    rollout:
+      <<: *rollout_handle_full
+#      <<: *rollout_handle_debug
+
+
+handle_debug: &handle_debug
+  <<: *f4
+  inference:
+    <<: *inference_f4
+    visualize_scaling: 1
+    visualize_grads: 1
+    rollout:
+#      <<: *rollout_handle_full
+      <<: *rollout_handle_debug
 
 
 ################################################
 local:
-  <<: *f
+  <<: *handle_debug
   opt:
     <<: *DEFAULT_OPT
     batch_size: 3
@@ -986,7 +1085,7 @@ local:
 
   data:
     <<: *DEFAULT_DATA
-    dataset_size: 5000
+    dataset_size: 1000
     use_cloth: 1
     use_fluid: 0
     use_diffusion: 0
@@ -1000,15 +1099,22 @@ local:
     log: false
 
   inference:
-    <<: *inference_author_ckpt1
+    <<: *inference_f4
     renderer: "PyTorch3D"
+    #    cuda: 0
+    device: cpu
+    iterations_per_timestep: 100
+    visualize_scaling: 1
+
     sft:
       <<: *DEFAULT_SFT
       json: ["sft/scenes/S1_res32_debug.json"]
       evaluate: 0
       optimize_uv: 0
       debug: 1
-    cuda: 0
+    rollout:
+      <<: *rollout_handle_debug
+      save_render_metamizer: 1
 
 
 debug:

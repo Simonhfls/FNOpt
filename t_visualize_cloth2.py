@@ -1,17 +1,19 @@
+import shutil
 import subprocess
+import uuid
 
 import matplotlib.pyplot as plt
 from matplotlib.colors import LightSource
-from dataset_cloth2 import DatasetCloth
+from dataset_cloth3 import DatasetCloth
 from dataset_utils import DatasetToSingleChannel
-from metamizer import get_Net2 as get_Net
+from metamizer import get_Net3 as get_Net
 from Logger import Logger
 import torch
 from get_param2 import params,toCuda,get_hyperparam, device
 import time
 import os
 from pytorch3d.io import save_obj
-from utils import grid_to_trimesh_faces
+from utils import grid_to_trimesh_faces, generate_ffmpeg_cmd
 
 if __name__ == '__main__':
 	print('params:', params)
@@ -19,9 +21,16 @@ if __name__ == '__main__':
 	params.training = False
 	logger = Logger(get_hyperparam(params),use_csv=False,use_tensorboard=False)
 	save = True#True#
+	unique_id = uuid.uuid4().hex[:8]
 	if save:
-		path = f"plots/{get_hyperparam(params).replace(' ','_').replace(';','_')}/cloth/{params.inference.load_date_time}/stiff_{params.inference.material.stretching} shear_{params.inference.material.shearing} bend_{params.inference.material.bending}"
-		os.makedirs(path,exist_ok=True)
+		path = (f"plots/{get_hyperparam(params).replace(' ','_').replace(';','_')}"
+				f"/cloth/{params.inference.load_date_time}"
+				f"/stiff_{params.inference.material.stretching} "
+				f"shear_{params.inference.material.shearing} "
+				f"bend_{params.inference.material.bending} "
+				f"iters_{params.inference.iterations_per_timestep}"
+				f"/tmp{unique_id}")
+		os.makedirs(path, exist_ok=True)
 		assert os.path.exists(path), f"Failed to create path: {path}"
 
 	frame = 0
@@ -31,17 +40,17 @@ if __name__ == '__main__':
 	metamizer = toCuda(get_Net(params))
 	#metamizer.nn = torch.compile(metamizer.nn)
 
-	date_time,index = logger.load_state(metamizer,None,datetime=params.inference.load_date_time,index=params.inference.load_index, device=device)
+	date_time,index = logger.load_state(metamizer,None, datetime=params.inference.load_date_time,index=params.inference.load_index, device=device)
 	print(f"loaded: {date_time}, {index}")
 	metamizer.eval()
 
 	scales = []
 	max_scales = []
 	gradients = []
-	average_sequence_length = params.inference.average_sequence_length
+	n_frames = params.inference.rollout.n_frames
 	with torch.no_grad():
 		for epoch in range(1):
-			original_dataset = DatasetCloth(params.inference.height,params.inference.width,1,1,params.inference.average_sequence_length,iterations_per_timestep=params.inference.iterations_per_timestep,stiffness_range=params.cloth.stretching_range,shearing_range=params.cloth.shearing_range,bending_range=params.cloth.bending_range,a_ext_range=params.cloth.g)
+			original_dataset = DatasetCloth(params.inference.height,params.inference.width,1,1,n_frames,iterations_per_timestep=params.inference.iterations_per_timestep,stiffness_range=params.cloth.stretching_range,shearing_range=params.cloth.shearing_range,bending_range=params.cloth.bending_range,a_ext_range=params.cloth.g)
 			original_dataset.reset0_env(0)	# bc is defined inside
 			print('rot.sum():', original_dataset.rot_speed.sum())
 			original_dataset.stiffnesses[:] = params.inference.material.stretching
@@ -52,16 +61,12 @@ if __name__ == '__main__':
 			FPS=0
 			start_time = time.time()
 
-			print('total iterations:',average_sequence_length*params.inference.iterations_per_timestep)
-			for t in range(average_sequence_length*params.inference.iterations_per_timestep):
+			print('total iterations:',n_frames*params.inference.iterations_per_timestep)
+			for t in range(n_frames*params.inference.iterations_per_timestep):
 				print(f"t: {t}")
-
 				grads, hidden_states = dataset.ask()
-
 				update_steps, new_hidden_states = metamizer(grads, hidden_states)
-
 				loss = dataset.tell(update_steps, new_hidden_states)
-
 				scales.append(new_hidden_states[0][2][0,0,0,0].detach().cpu().numpy())
 				gradients.append(torch.norm(grads,p=2).detach().cpu().numpy())
 
@@ -161,7 +166,7 @@ if __name__ == '__main__':
 
 			end_time = time.time()
 			print(f"dt = {end_time-start_time}s")
-			print(f"FPS: {params.inference.average_sequence_length/(end_time-start_time)}")
+			print(f"FPS: {n_frames/(end_time-start_time)}")
 
 
 	if params.inference.visualize_scaling:  # visualize, how scaling changes during update steps
@@ -187,18 +192,15 @@ if __name__ == '__main__':
 		plt.draw()
 		plt.savefig(f"{path}/grad_norm_{str(frame).zfill(4)}.png", dpi=dpi)
 
+	output_file = f"V_iterpstep{params.inference.iterations_per_timestep}_res{params.inference.height}x{params.inference.width}.mp4"
 
-	ffmpeg_cmd = [
-		"ffmpeg",
-		"-y",
-		"-framerate", f"{params.inference.framerate}",
-		"-pattern_type", "glob",
-		"-i", f"{path}/frame*.png",
-		"-frames:v", str(average_sequence_length),
-		"-c:v", "libx264",
-		"-pix_fmt", "yuv420p",
-		os.path.join(path, f"V_iterpstep{params.inference.iterations_per_timestep}_res{params.inference.height}x{params.inference.width}.mp4")
-	]
+	ffmpeg_cmd = generate_ffmpeg_cmd(
+		render_dir=path,
+		output_file=output_file,
+		output_dir=os.path.dirname(path),
+		framerate=params.inference.framerate,
+		n_frames=params.inference.rollout.n_frames
+	)
 	# execute ffmpeg to render images
 	try:
 		start_time = time.perf_counter()
@@ -213,4 +215,11 @@ if __name__ == '__main__':
 			if file.endswith(".png") and file.startswith('frame'):
 				os.remove(os.path.join(path, file))
 
+	try:
+		os.rmdir(path)  # Only works if the directory is empty
+		print(f"Deleted render directory: {path}")
+	except OSError:
+		# Fallback: force delete the whole folder (if any residual files remain)
+		shutil.rmtree(path)
+		print(f"Force-deleted render directory with residual files: {path}")
 

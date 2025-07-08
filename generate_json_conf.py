@@ -7,7 +7,7 @@ import os
 import torch
 import numpy as np
 
-from get_param2 import device
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
 def rotate_x_dir_values(x_values, direction):
@@ -671,11 +671,9 @@ def get_path_from_gt_input(gt_input, root_path_mgnrp):
     root_path = os.path.join(root_path_mgnrp, "input", "gt_data")
     gt_folders = [folder for folder in os.listdir(root_path) if \
                   os.path.isdir(os.path.join(root_path, folder))]
-
     gt_path = None
     for gt_folder in gt_folders:
         json_path = os.path.join(root_path, gt_folder, "meta.json")
-
         assert (os.path.exists(json_path))
         with open(json_path, 'r') as json_file:
             json_dict = json.load(json_file)
@@ -692,6 +690,8 @@ def get_path_from_gt_input(gt_input, root_path_mgnrp):
 
     assert (gt_path is not None)
     return gt_path
+
+
 
 
 motion_traj_to_mcode = {

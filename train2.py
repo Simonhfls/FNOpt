@@ -12,7 +12,7 @@ import torch
 from torch.optim import Adam, AdamW
 from torch.optim.lr_scheduler import MultiStepLR
 import numpy as np
-from get_param2 import params, toCuda, get_hyperparam, get_load_hyperparam
+from get_param2 import params, toCuda, get_hyperparam, get_load_hyperparam, toDType
 from neuralop.utils import count_model_params
 from utils import has_nan
 import wandb
@@ -43,6 +43,7 @@ if __name__ == '__main__':
 	print('params:', params)
 
 	metamizer = toCuda(get_Net(params))
+	metamizer = toDType(metamizer)
 	metamizer.train()
 	#metamizer.nn = torch.compile(metamizer.nn)
 
@@ -55,13 +56,12 @@ if __name__ == '__main__':
 	elif params.opt.optimizer == 'adamw':
 		optimizer = AdamW(metamizer.parameters(),lr=params.opt.lr)
 	scheduler = MultiStepLR(optimizer, milestones=[25,50,75], gamma=0.5)
-	wandb_init(params)
+	# wandb_init(params)
 
 	logger = Logger(get_hyperparam(params),use_csv=False,use_tensorboard=False)
+	params.datetime = logger.datetime
+	wandb_init(params)
 
-	print('params.cloth.load_latest', params.cloth.load_latest)
-	print('params.cloth.load_date_time', params.cloth.load_date_time)
-	print('params.cloth.load_index', params.cloth.load_index)
 
 	if params.cloth.load_latest or params.cloth.load_date_time is not None or params.cloth.load_index is not None:
 		load_logger = Logger(get_load_hyperparam(params),use_csv=False,use_tensorboard=False)
@@ -173,7 +173,14 @@ if __name__ == '__main__':
 			optimizer.step()
 
 		if (epoch + 1) % params.opt.i_save == 0:
-			logger.save_state(metamizer.cpu(), optimizer, epoch + 1)
+			if not params.net.name == 'MeshGraphNets2':
+				logger.save_state(metamizer.cpu(), optimizer, epoch + 1)
+			else:
+				# logger.save_state(cloth_net,optimizer,epoch+1)
+				model_dir = 'Logger/{}/{}/states'.format(logger.name, logger.datetime)
+				os.makedirs(model_dir, exist_ok=True)
+				metamizer.model.save_checkpoint(savedir=model_dir, index=epoch + 1)
+				print('model saved to:', model_dir)
 			metamizer = toCuda(metamizer)
 
 		scheduler.step()

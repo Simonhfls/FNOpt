@@ -256,8 +256,6 @@ class DatasetCloth:
 		self.translation_amp[index] = moving * (torch.rand(3, 1, 1) - 0.5) * 2 * 10  # 0#
 		self.pinch_freq[index] = moving * (torch.rand(1, 1, 1) - 0.5) * 2 * 0.2  # 0#
 
-
-
 		# reset state
 		self.hidden_states[index] = None  # hidden state for (neural) optimizer
 		self.T[index] = 0  # time of env
@@ -276,7 +274,6 @@ class DatasetCloth:
 		self.bc_positions_orig[index] = self.x[index].clone()
 
 		# external forces
-
 		# self.a_exts[index] = torch.exp(self.a_ext_range[0]+torch.rand(1)*self.a_ext_range[1]) # TODO: init with gravity
 		g_scale = self.a_ext_range[0] + torch.rand(1, device=device) * self.a_ext_range[1]
 		# self.g_vect[index,:,0,0] = torch.tensor([0,0,-1.0],device=device)*g_scale#

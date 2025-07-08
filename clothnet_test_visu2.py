@@ -3,6 +3,7 @@ import os
 import shutil
 import sys
 import uuid
+from pathlib import Path
 
 from compute_forces import compute_wind_force
 from configs.config_common import motion_presets
@@ -11,7 +12,6 @@ from generate_json_conf import setup_handle_traj
 from grid_mesh import GridMesh
 from preprocess import transform_positions
 from utils import generate_ffmpeg_cmd, get_unique_filename, get_face_areas_batch
-
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from matplotlib.colors import LightSource
 from Logger import Logger
@@ -20,8 +20,7 @@ from get_param2 import get_params, toCuda, get_hyperparam, params, device
 from metamizer import get_Net3 as get_Net
 from sft import evaluation
 from sft.render import opencv_projection, ComputeViewMatrix, render_pytorch, render_nvdiffrast, render_single
-from sft.utils import loadJson, grid_to_trimesh_faces
-
+from sft.utils import loadJson
 import subprocess
 import numpy as np
 from pytorch3d.transforms import axis_angle_to_matrix
@@ -110,6 +109,7 @@ class Rollout():
         self.scene_parameters = scene
         self.mesh_resolution = scene['mesh_resolution']
         self.real_scene = True if self.scene_parameters['scene'][0] == 'R' else False
+        self.dir_dataset = scene['dataset_dir']
 
         self.h = self.mesh_resolution  # 32
         self.w = self.mesh_resolution  # 32
@@ -139,7 +139,7 @@ class Rollout():
 
 
     def initializeMesh(self):
-        verts, faces, aux = load_obj(self.scene_parameters["mesh_file"], load_textures=True, device=self.device)
+        verts, faces, aux = load_obj(str(Path(self.dir_dataset) / self.scene_parameters["mesh_file"]), load_textures=True, device=self.device)
 
         self.rest_positions = verts.to(dtype=self.dtype)
         self.faces = faces.verts_idx.to(dtype=torch.int32)
@@ -183,7 +183,7 @@ class Rollout():
                 self.handle_mask[handle_ind, :] = False
 
             # load mgnrp mesh
-            obj_path = self.scene_parameters["mesh_file_mgnrp"]
+            obj_path = self.scene_parameters["mesh_file"]
             verts, _, _ = load_obj(obj_path, load_textures=True, device=self.device)
             handle_traj = setup_handle_traj(verts, self.motion_code, list(reversed(handle_ind_list)),50) # todo check bug, compare with mgnrp
             handle_distance_mgnrp = (handle_traj[0, handle_ind_list[0]] - handle_traj[0, handle_ind_list[1]]).norm()
@@ -404,7 +404,7 @@ class Rollout():
             self.context = dr.RasterizeCudaContext()
 
         # texture
-        texture_path = self.scene_parameters["texture_file"]
+        texture_path = str(Path(self.dir_dataset) / self.scene_parameters["texture_file"])
         texture = np.array(Image.open(texture_path)) / 255.0        # TODO resize?
         self.texture_image = torch.tensor(texture)[None, ...].to(dtype=torch.float32).to(self.device)
         if self.renderer == "nvdiffrast":
@@ -649,14 +649,14 @@ def main():
         if params.inference.rollout.save_render:
             print(f"Generating render video for resolution {opt.mesh_resolution}")
             render_dir = opt.dir_rgb
-            output_file = get_unique_filename(f"V_RGB_{params.net.name}{params.inference.postfix}_RES{opt.mesh_resolution}_Y{params.inference.material.stretching}_S{params.inference.material.shearing}_B{params.inference.material.bending}_EP{opt.load_index}_FPS{params.inference.framerate}_iters{params.inference.iterations_per_timestep}_{params.inference.renderer}.mp4",
+            output_file = get_unique_filename(f"V_RGB_{params.net.name}{params.inference.postfix}_RES{opt.mesh_resolution}_Y{params.inference.material.stretching}_S{params.inference.material.shearing}_B{params.inference.material.bending}_EP{opt.load_index}_FPS{params.inference.rollout.framerate}_iters{params.inference.iterations_per_timestep}_{params.inference.renderer}.mp4",
                                               output_dir=os.path.dirname(render_dir))
 
             ffmpeg_cmd = generate_ffmpeg_cmd(
                 render_dir=render_dir,
                 output_file=output_file,
                 output_dir=os.path.dirname(render_dir),
-                framerate=params.inference.framerate,
+                framerate=params.inference.rollout.framerate,
                 n_frames=params.inference.rollout.n_frames
             )
             # execute ffmpeg to render images
@@ -683,14 +683,14 @@ def main():
             opt.save_acc_visu()
             print(f"Generating accuracy heatmap video for resolution {opt.mesh_resolution}")
             acc_render_dir = opt.dir_acc
-            output_file = get_unique_filename(f"V_ACC_{params.net.name}{params.inference.postfix}_RES{opt.mesh_resolution}_Y{params.inference.material.stretching}_S{params.inference.material.shearing}_B{params.inference.material.bending}_EP{opt.load_index}_FPS{params.inference.framerate}.mp4",
+            output_file = get_unique_filename(f"V_ACC_{params.net.name}{params.inference.postfix}_RES{opt.mesh_resolution}_Y{params.inference.material.stretching}_S{params.inference.material.shearing}_B{params.inference.material.bending}_EP{opt.load_index}_FPS{params.inference.rollout.framerate}.mp4",
                                               output_dir=os.path.dirname(acc_render_dir))
 
             ffmpeg_cmd = generate_ffmpeg_cmd(
                 render_dir=acc_render_dir,
                 output_dir=os.path.dirname(acc_render_dir),
                 output_file=output_file,
-                framerate=params.inference.framerate,
+                framerate=params.inference.rollout.framerate,
                 n_frames=params.inference.rollout.n_frames
             )
             try:
@@ -718,7 +718,7 @@ def main():
                 render_dir=opt.path_metamizer,
                 output_file=output_file,
                 output_dir=os.path.dirname(render_dir),
-                framerate=params.inference.framerate,
+                framerate=params.inference.rollout.framerate,
                 n_frames=params.inference.rollout.n_frames
             )
 
@@ -745,13 +745,13 @@ def main():
             viewport_dict = {'def': (-60, 30), 'side': (-90, 90), 'front': (0, 0)}
             face_info = GridMesh(height=opt.h, width=opt.w).generate_triangles().numpy()
             viewport = 'def'
-            fps = params.inference.framerate
+            fps = params.inference.rollout.framerate
             render_dir = os.path.abspath(os.path.dirname(opt.scene_parameters["result_chamfer_file"]) + '/rendered_rollout_3d')
 
             if not os.path.exists(render_dir):
                 os.makedirs(render_dir)
             result_file = get_unique_filename(
-                f"V_RGB_{params.net.name}{params.inference.postfix}_RES{opt.mesh_resolution}_Y{params.inference.material.stretching}_S{params.inference.material.shearing}_B{params.inference.material.bending}_WD{params.inference.rollout.wind_density}_EP{opt.load_index}_FPS{params.inference.framerate}_iters{params.inference.iterations_per_timestep}_{opt.motion_code}_{viewport}.mp4",
+                f"V_RGB_{params.net.name}{params.inference.postfix}_RES{opt.mesh_resolution}_Y{params.inference.material.stretching}_S{params.inference.material.shearing}_B{params.inference.material.bending}_WD{params.inference.rollout.wind_density}_EP{opt.load_index}_FPS{params.inference.rollout.framerate}_iters{params.inference.iterations_per_timestep}_{opt.motion_code}_{viewport}.mp4",
                 output_dir=render_dir)
             result_path = os.path.join(render_dir, result_file)
             print(f'saving 3d render to: {result_path}')

@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from get_param2 import params,toCuda,toCpu,device,cuda
+from get_param2 import params,toCuda,toCpu,device
 import torch.nn.functional as F
 from derivatives import laplace,laplace_detach
 

@@ -1,0 +1,186 @@
+default: &DEFAULT
+  name: 'mgnrp_base'
+  net:
+    name: 'MGNRP'
+    dtype: float32
+
+
+  ema:
+    update_after_step: None  # Start updating EMA after this number of steps
+    update_every: 1  # Update EMA every 'n' steps
+    beta: 0.995  # EMA smoothing factor (closer to 1 means smoother updates)
+
+  data: &DEFAULT_DATA
+    dataset_size: 1000
+    average_sequence_length: 1000
+    n_batches_per_epoch: 5000  # default is 5000 or 501?
+
+    height: 100
+    width: 100
+    seed: 666
+
+    use_cloth: 1
+    use_fluid: 1
+    use_diffusion: 1
+    use_poisson: 1
+
+  cloth: &DEFAULT_CLOTH
+    use_f_ext: 0
+    max_stretching: 1000  # Maximum stretching parameter for cloth
+    min_stretching: 100  # Minimum stretching parameter for cloth
+    max_shearing: 100  # Maximum shearing parameter for cloth
+    min_shearing: 1  # Minimum shearing parameter for cloth
+    max_bending: 10  # Maximum bending parameter for cloth
+    min_bending: 0.01  # Minimum bending parameter for cloth
+    repulsive: &DEFAULT_repulsive
+      k: 0
+      resolution: 32  # Repulsive force between cloth vertices
+
+    a_ext: 1  # External acceleration (gravitational constant)
+    min_a_ext: null  # Minimum gravitational constant (defaults to a_ext if not set)
+    g: 0.125  # Gravitational constant (deprecated, prefer a_ext)
+    L_0: 1  # Rest length of cloth grid edges
+    dt: 1  # Timestep for cloth simulation integrator
+#    f_ext_percentage: 0.2
+
+    # Load parameters
+    l_stretching: null  # Load stretching parameter of cloth
+    l_shearing: null  # Load shearing parameter of cloth
+    l_bending: null  # Load bending parameter of cloth
+    l_g: null  # Load gravitational constant
+    l_L_0: null  # Load rest length of cloth grid edges
+    l_dt: 1  # Load timestep of cloth simulation integrator
+    load_date_time: null  # Date and time of the run to load
+    load_index: null  # Index of the run to load
+    load_optimizer: false  # Whether to load the state of the optimizer
+    load_latest: false  # Load the latest version for training (overrides date_time and index)
+
+  inference: &DEFAULT_INFERENCE
+    load_date_time: "2024-09-25 03:02:43"
+    load_index: null
+    save_obj: 0
+    visualize_scaling: 0
+    visualize_grads: 0
+    postfix: "a"
+    renderer: "Nvdiffrast"          # Nvdiffrast / PyTorch3D
+    iterations_per_timestep: 3
+    height: 100
+    width: 100
+    device: cuda
+    material:
+      stretching: 1000
+      shearing: 8
+      bending: 0.5
+    sft: &DEFAULT_SFT
+#      json: [ "scenes/R1.json", "scenes/R2.json","scenes/R3.json","scenes/R4.json","scenes/R5.json","scenes/R6.json","scenes/R7.json","scenes/R8.json","scenes/R9.json","scenes/S1_res32.json","scenes/S2_res32.json","scenes/S3_res32.json","scenes/S4_res32.json" ]
+#      json: ["sft/scenes/S1_res32.json", "scenes/S2_res32.json", "scenes/S3_res32.json", "scenes/S4_res32.json"]
+      json: ["sft/scenes/S1_res100.json"]
+#      json: ["scenes/R1.json"]
+      evaluate: 1
+      optimize_uv: 0
+      debug: 1
+      save_mesh: 1
+      n_epochs_opt: 250
+      debug_n_save: 1
+      save_render: 1
+      save_acc_heatmap: 0
+      new_frame_period: 5  # 5
+      framerate: 50
+
+
+      lr: &DEFAULT_lr
+        stretching: 5e1   # 5e1
+        shearing: 1e-1    # 1e-1
+        bending: 1e-2     # 1e-2
+        external: 5e-1       # 5e-2
+        vertex: 1e-2      # 1e-3
+        uv: 2e-4          # 2e-4
+
+      lc: &DEFAULT_lc  # loss coefficients
+        rgb: 1
+        sil: 1
+        shift: 1e-2
+        uv_smooth: 0
+
+    rollout: &DEFAULT_ROLLOUT
+      n_frames: 1500  # 300
+      save_render: 1
+      save_acc_heatmap: 0
+      save_render_metamizer: 0
+      save_render_3d: 0
+      save_npy: 1
+      using_handle_traj: 0
+      motion_code: null
+      wind_density: 1
+      json: ["sft/scenes/S1_res100.json"]
+      evaluate: 1
+      framerate: 60
+      input_data:
+        motion_code: debug    # [debug, regular, full, fancy]
+        mode: arbitrary       # [arbitrary, with_gt]
+        obj_code: square_1024
+
+
+rollout_handle_eval: &rollout_handle_eval
+  <<: *DEFAULT_ROLLOUT
+  json: ["sft/scenes/S_MGNRP_res32.json"]
+  save_render: 0
+  save_acc_heatmap: 0
+  save_render_3d: 1
+  using_handle_traj: 1
+  evaluate: 1
+  input_data:
+    motion_code: eval
+    mode: with_gt       # [arbitrary, with_gt]
+    obj_code: square_1024
+
+
+rollout_handle_eval_res64: &rollout_handle_eval_res64
+  <<: *DEFAULT_ROLLOUT
+  json: ["sft/scenes/S_MGNRP_res64.json"]
+  save_render: 0
+  save_acc_heatmap: 0
+  save_render_3d: 1
+  using_handle_traj: 1
+  evaluate: 1
+  input_data:
+    motion_code: eval
+    mode: with_gt       # [arbitrary, with_gt]
+    obj_code: square_1024
+
+
+rollout_handle_debug: &rollout_handle_debug
+  <<: *DEFAULT_ROLLOUT
+  json: ["sft/scenes/S_MGNRP_res32.json"]
+  save_render: 0
+  save_acc_heatmap: 0
+  save_render_3d: 1
+  using_handle_traj: 1
+  evaluate: 0
+  input_data:
+    motion_code: debug
+    mode: with_gt       # [arbitrary, with_gt]
+    obj_code: square_1024
+
+
+################################################
+local:
+  <<: *DEFAULT
+  inference:
+    <<: *DEFAULT_INFERENCE
+    renderer: "PyTorch3D"
+    device: cpu
+    iterations_per_timestep: 10
+    sft:
+      <<: *DEFAULT_SFT
+      json: ["sft/scenes/R1.json"]
+      evaluate: 1
+      optimize_uv: 0
+      debug: 1
+    rollout:
+      <<: *rollout_handle_eval
+#      save_render_metamizer: 1
+
+
+
+

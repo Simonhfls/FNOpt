@@ -6,3 +6,5 @@ data/**
 .idea
 .DS_Store
 Logger/**
+ruochen
+debug

@@ -1,5 +1,4 @@
 import json
-
 import openmesh as om
 import torch
 from matplotlib import pyplot as plt

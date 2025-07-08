@@ -5,6 +5,9 @@ default: &DEFAULT
     message_passing_steps: 15
     node_input_size: 12
     edge_input_size: 4
+    hidden_size: 128
+    num_layers: 3
+    scale_feature_layer: 1
     dtype: float32
 
   ema:
@@ -87,21 +90,20 @@ default: &DEFAULT
     load_date_time: "???"
     load_index: null
     save_obj: 0
+    visualize_3d: 0
     visualize_scaling: 0
     visualize_grads: 0
     postfix: "a"
     renderer: "Nvdiffrast"          # Nvdiffrast / PyTorch3D
-    framerate: 50
-    average_sequence_length: 100
     iterations_per_timestep: 10
     height: 100
     width: 100
-    cuda: 1
+    device: cuda
 
     material:
       stretching: 1000
-      shearing: 10
-      bending: 10
+      shearing: 8
+      bending: 0.5
     sft: &DEFAULT_SFT
 #      json: [ "scenes/R1.json", "scenes/R2.json","scenes/R3.json","scenes/R4.json","scenes/R5.json","scenes/R6.json","scenes/R7.json","scenes/R8.json","scenes/R9.json","scenes/S1_res32.json","scenes/S2_res32.json","scenes/S3_res32.json","scenes/S4_res32.json" ]
 #      json: ["sft/scenes/S1_res32.json", "scenes/S2_res32.json", "scenes/S3_res32.json", "scenes/S4_res32.json"]
@@ -115,6 +117,7 @@ default: &DEFAULT
       save_render: 1
       save_acc_heatmap: 0
       new_frame_period: 5
+      framerate: 50
 
       lr: &DEFAULT_lr
         stretching: 5e1   #5e1
@@ -132,9 +135,98 @@ default: &DEFAULT
     rollout: &DEFAULT_ROLLOUT
       n_frames: 600
       save_render: 1
-      save_acc_heatmap: 1
+      save_acc_heatmap: 0
       save_render_metamizer: 0
+      save_render_3d: 0
+      save_npy: 1
+      using_handle_traj: 0
+      motion_code: null
+      wind_density: 1
       json: [ "sft/scenes/S1_res100.json" ]
+      evaluate: 1
+      framerate: 60
+      input_data:
+        motion_code: debug    # [debug, regular, full, fancy]
+        mode: arbitrary       # [arbitrary, with_gt]
+        obj_code: square_1024
+
+rollout_handle_full: &rollout_handle_full
+  <<: *DEFAULT_ROLLOUT
+  json: ["sft/scenes/S_MGNRP_res64.json"]
+  save_render: 0
+  save_acc_heatmap: 0
+  save_render_3d: 1
+  using_handle_traj: 1
+  input_data:
+    motion_code: full
+    mode: arbitrary       # [arbitrary, with_gt]
+    obj_code: square_1024
+
+rollout_handle_regular: &rollout_handle_regular
+  <<: *DEFAULT_ROLLOUT
+  json: ["sft/scenes/S_MGNRP_res32.json"]
+  save_render: 0
+  save_acc_heatmap: 0
+  save_render_3d: 1
+  using_handle_traj: 1
+  input_data:
+    motion_code: regular
+    mode: arbitrary       # [arbitrary, with_gt]
+    obj_code: square_1024
+
+rollout_handle_fancy: &rollout_handle_fancy
+  <<: *DEFAULT_ROLLOUT
+  json: ["sft/scenes/S_MGNRP_res32.json"]
+  save_render: 0
+  save_acc_heatmap: 0
+  save_render_3d: 1
+  using_handle_traj: 1
+  input_data:
+    motion_code: fancy
+    mode: arbitrary       # [arbitrary, with_gt]
+    obj_code: square_1024
+
+rollout_handle_eval: &rollout_handle_eval
+  <<: *DEFAULT_ROLLOUT
+  json: ["sft/scenes/S_MGNRP_res32.json"]
+  save_render: 0
+  save_acc_heatmap: 0
+  save_render_3d: 1
+  using_handle_traj: 1
+  evaluate: 1
+  input_data:
+    motion_code: eval
+    mode: with_gt       # [arbitrary, with_gt]
+    obj_code: square_1024
+
+
+rollout_handle_eval_res64: &rollout_handle_eval_res64
+  <<: *DEFAULT_ROLLOUT
+  json: ["sft/scenes/S_MGNRP_res64.json"]
+  save_render: 0
+  save_acc_heatmap: 0
+  save_render_3d: 1
+  using_handle_traj: 1
+  evaluate: 1
+  input_data:
+    motion_code: eval
+    mode: with_gt       # [arbitrary, with_gt]
+    obj_code: square_1024
+
+
+rollout_handle_debug: &rollout_handle_debug
+  <<: *DEFAULT_ROLLOUT
+  json: ["sft/scenes/S_MGNRP_res32.json"]
+  save_render: 0
+  save_acc_heatmap: 0
+  save_render_3d: 1
+  using_handle_traj: 1
+  evaluate: 0
+  input_data:
+    motion_code: debug
+    mode: with_gt       # [arbitrary, with_gt]
+    obj_code: square_1024
+
 
 a: &a
   <<: *DEFAULT
@@ -209,7 +301,7 @@ e: &e
 
 f: &f
   <<: *DEFAULT
-  name: '??'
+  name: '0616_mgnn_f'
   net:
     <<: *DEFAULT_NET
     message_passing_steps: 15
@@ -219,14 +311,81 @@ f: &f
     <<: *DEFAULT_DATA
     height: 32
     width: 32
-    n_batches_per_epoch: 5000
+    n_batches_per_epoch: 501
   opt:
     <<: *DEFAULT_OPT
     batch_size: 10
   inference: &inference_f
     <<: *DEFAULT_INFERENCE
-    load_date_time: "??"
-    postfix: "e"
+    load_date_time: "2025-06-16 15:57:07"
+    postfix: "f"
+
+
+g: &g
+  <<: *DEFAULT
+  name: '0616_mgnn_g'
+  net:
+    <<: *DEFAULT_NET
+    message_passing_steps: 15
+    node_input_size: 5
+
+  data:
+    <<: *DEFAULT_DATA
+    height: 32
+    width: 32
+    n_batches_per_epoch: 5000
+  opt:
+    <<: *DEFAULT_OPT
+    batch_size: 10
+  inference: &inference_g
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "2025-06-16 16:14:53"
+    postfix: "g"
+
+
+h: &h
+  <<: *DEFAULT
+  name: '0618_mgnn_h'
+  net:
+    <<: *DEFAULT_NET
+    message_passing_steps: 15
+    node_input_size: 5
+
+  data:
+    <<: *DEFAULT_DATA
+    height: 32
+    width: 32
+    n_batches_per_epoch: 5000
+  opt:
+    <<: *DEFAULT_OPT
+    batch_size: 10
+  inference: &inference_h
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "2025-06-18 01:48:00"
+    postfix: "h"
+
+
+i: &i
+  <<: *DEFAULT
+  name: '0618_mgnn_i'
+  net:
+    <<: *DEFAULT_NET
+    message_passing_steps: 15
+    node_input_size: 5
+
+  data:
+    <<: *DEFAULT_DATA
+    height: 32
+    width: 32
+    n_batches_per_epoch: 5000
+  opt:
+    <<: *DEFAULT_OPT
+    batch_size: 10
+  inference: &inference_i
+    <<: *DEFAULT_INFERENCE
+    load_date_time: "2025-06-19 10:33:44"
+    postfix: "i"
+
 
 
 test: &test
@@ -249,11 +408,34 @@ test: &test
     postfix: "test"
 
 
+handle: &handle
+  <<: *i
+  inference:
+    <<: *inference_i
+    visualize_scaling: 0
+    visualize_grads: 0
+    visualize_3d: 0
+    rollout: &rollout_handle
+      <<: *DEFAULT_ROLLOUT
+      json: [ "sft/scenes/S_MGNRP_res32.json" ]
+      save_render: 0
+      save_render_metamizer: 0
+      save_acc_heatmap: 0
+      save_render_3d: 1
+      using_handle_traj: 1
+      save_npy: 1
+      evaluate: 1
+      input_data:
+        motion_code: eval
+        mode: with_gt       # [arbitrary, with_gt]
+        obj_code: square_1024
+
+
 
 
 ################################################
 local:
-  <<: *f
+  <<: *i
   opt:
     <<: *DEFAULT_OPT
     batch_size: 3
@@ -273,8 +455,18 @@ local:
     log: false
 
   inference:
-    <<: *inference_b
+    <<: *inference_i
     renderer: "PyTorch3D"
+    device: cpu
+    height: 32
+    width: 32
+    iterations_per_timestep: 10
+
+    rollout:
+#      <<: *DEFAULT_ROLLOUT
+      <<: *rollout_handle
+#      json: [ "sft/scenes/S1_res32.json" ]
+
     sft:
       <<: *DEFAULT_SFT
       json: ["sft/scenes/S1_res32.json"]

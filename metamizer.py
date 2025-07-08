@@ -6,16 +6,15 @@ sys.path.append(os.path.join(os.getcwd(), "../baseline/meshgraphnets"))
 from torch_geometric.data import Data, Batch
 from common import triangles_to_edges, NodeType
 from grid_mesh import GridMesh
-from impl_2.model import EncoderProcesserDecoder, EncoderProcesserDecoderCustom
+from impl_2.model import EncoderProcesserDecoderCustom
 from impl_2 import Simulator
-from get_param2 import params
 from neuralop.layers.resample import resample
-from utils import normalize_grads, normalize_grads_scale, has_nan
+from utils import normalize_grads
 from get_param2 import toDType
 from unet_parts import *
 from neuralop.models import GINO, FNO2d, FNO, UNO
 
-device = 'cuda' if params.opt.cuda else 'cpu'
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 eps = 1e-12  # 1e-6#
 
@@ -26,21 +25,21 @@ def get_Net(params):
     return net
 
 
-def get_Net2(params):
-    if params.net.name == "Metamizer":
-        net = toDType(Metamizer(params.net.hidden_size))
-    elif params.net.name == 'FNOVertex':
-        net = FNO_vertex(**params.net)
-    elif params.net.name == 'UNOVertex':
-        net = UNO_vertex(**params.net)
-    elif params.net.name == 'MeshGraphNets2':
-        net = MGN(message_passing_steps=params.net.message_passing_steps,
-                  node_input_size=params.net.node_input_size,
-                  edge_input_size=params.net.edge_input_size,
-                  h=params.data.height,
-                  w=params.data.width,
-                  device=device)
-    return net
+# def get_Net2(params):
+#     if params.net.name == "Metamizer":
+#         net = toDType(Metamizer(params.net.hidden_size))
+#     elif params.net.name == 'FNOVertex':
+#         net = FNO_vertex(**params.net)
+#     elif params.net.name == 'UNOVertex':
+#         net = UNO_vertex(**params.net)
+#     elif params.net.name == 'MeshGraphNets2':
+#         net = MGN(message_passing_steps=params.net.message_passing_steps,
+#                   node_input_size=params.net.node_input_size,
+#                   edge_input_size=params.net.edge_input_size,
+#                   h=params.data.height,
+#                   w=params.data.width,
+#                   device=device)
+#     return net
 
 def get_Net3(params):
     if params.net.name == "Metamizer":
@@ -58,6 +57,9 @@ def get_Net3(params):
                   edge_input_size=params.net.edge_input_size,
                   h=params.data.height,
                   w=params.data.width,
+                  hidden_size=params.net.hidden_size,
+                  num_layers=params.net.num_layers,
+                  scale_feature_layer=params.net.scale_feature_layer,
                   device=device)
     return net
 
@@ -105,7 +107,7 @@ class Metamizer(nn.Module):
 
     def __init__(self, hidden_size=64, bilinear=True):
         super(Metamizer, self).__init__()
-        self.initial_scale = 0.05  # 1#0.05 # ?
+        self.initial_scale = 0.05  # 1#0.05 # ? default: 0.05
         self.nn = MixedUnet(3 * 1, 1, 1, hidden_size, bilinear)
 
     def forward(self, grads, hidden_states=None):
@@ -189,7 +191,7 @@ class MetamizerUnified(nn.Module):
         super(MetamizerUnified, self).__init__()
         self.initial_scale = 0.05  # 1#0.05 # ?
         self.nn = basenet
-    def forward(self, grads, hidden_states=None):
+    def forward(self, grads, hidden_states=None, **kwargs):
         """
         :grads: input gradients of shape: batch_size x 1 x h x w
         :hidden_states: list of length batch_size
@@ -222,7 +224,11 @@ class MetamizerUnified(nn.Module):
         inputs = torch.cat([normalized_grads.float(), normalized_last_grads.float(), normalized_last_steps.float()], 1)
 
         # compute update step and delate for
-        update_step, d_scale = self.nn(inputs)      # input: (bs, 3, h, w), output: (bs, 1, h, w) and (bs, 1)
+        # update_step, d_scale = self.nn(inputs)      # input: (bs, 3, h, w), output: (bs, 1, h, w) and (bs, 1)
+        if "output_shape" in kwargs:
+            update_step, d_scale = self.nn(inputs, output_shape=kwargs["output_shape"])
+        else:
+            update_step, d_scale = self.nn(inputs)
 
         # gradient normalization (normalize_grads) => so gradients at different optimization stages get equal weights
 
@@ -236,6 +242,8 @@ class MetamizerUnified(nn.Module):
         d_scale = torch.exp(normalize_grads(2 * torch.tanh(d_scale / 2) - 1))
 
         # update scaling parameter
+        # d_scale > 1 shows that the update step should be scaled up
+        # d_scale < 1 shows that the update step should be scaled down
         scales = last_scales * d_scale.unsqueeze(2).unsqueeze(3)
 
         # multiply update step with scaling
@@ -472,6 +480,7 @@ class FNO2dCustom(FNO2d):
         self,
         hidden_channels,
         scale_feature_layer=None,
+        scalar_pooling='amax',
         **kwargs
     ):
         super().__init__(
@@ -480,6 +489,8 @@ class FNO2dCustom(FNO2d):
         )
         self.out_scalar = nn.Linear(hidden_channels, 1)
         self.scale_feature_layer = scale_feature_layer
+        self.scalar_pooling = scalar_pooling  # 'amax' or 'avgpool'
+
         pass
 
     def forward(self, x, output_shape=None, **kwargs):
@@ -501,7 +512,7 @@ class FNO2dCustom(FNO2d):
         for layer_idx in range(self.n_layers):
             x = self.fno_blocks(x, layer_idx, output_shape=output_shape[layer_idx])
 
-            if self.scale_feature_layer and layer_idx == self.scale_feature_layer:
+            if self.scale_feature_layer is not None and layer_idx == self.scale_feature_layer:
                 scale_feature = x
 
 
@@ -511,8 +522,14 @@ class FNO2dCustom(FNO2d):
         if self.scale_feature_layer is None:
             scale_feature = x
 
-        scale = self.out_scalar(torch.amax(scale_feature, dim=[2, 3]))
 
+        if self.scalar_pooling == 'amax':
+            scale_feature = torch.amax(scale_feature, dim=[2, 3])
+        elif self.scalar_pooling == 'avgpool':
+            scale_feature = F.adaptive_avg_pool2d(scale_feature, 1).view(scale_feature.size(0), -1)
+        else:
+            raise ValueError(f"Unsupported scalar_pooling mode: {self.scalar_pooling}")
+        scale = self.out_scalar(scale_feature)
         out = self.projection(x)
 
         return out, scale
@@ -592,6 +609,9 @@ class MGN(nn.Module):
             node_input_size,
             edge_input_size,
             h, w,
+            hidden_size,
+            num_layers,
+            scale_feature_layer,
             device
     ):
         self.device = device
@@ -608,9 +628,12 @@ class MGN(nn.Module):
         #                        device=device)
 
         self.model = MGN_custom(message_passing_num=message_passing_steps,
-                               node_input_size=node_input_size,
-                               edge_input_size=edge_input_size,
-                               device=device)
+                                node_input_size=node_input_size,
+                                edge_input_size=edge_input_size,
+                                hidden_size=hidden_size,
+                                num_layers=num_layers,
+                                scale_feature_layer=scale_feature_layer,
+                                device=device)
 
     def forward(self, grads, hidden_states=None):
         bs, c, h, w = grads.shape
@@ -656,7 +679,7 @@ class MGN(nn.Module):
 
             # concat edge feature: 3 + 1 + 2 + 1 = 7 dim
             edge_features = torch.cat([relative_world_pos, norm_world], dim=-1)
-
+            # print('x_feat[:5]', x_feat[:5])
             data = Data(
                 x=x_feat,
                 pos=x_feat,  # [N, 3]  (world_pos)
@@ -697,13 +720,18 @@ class MGN(nn.Module):
 
 
 class MGN_custom(Simulator):
-    def __init__(self, message_passing_num, node_input_size, edge_input_size, device):
+    def __init__(self, message_passing_num, node_input_size, edge_input_size, hidden_size, num_layers, scale_feature_layer, device):
         super(MGN_custom, self).__init__(message_passing_num=message_passing_num,
                                          node_input_size=node_input_size,
                                          edge_input_size=edge_input_size,
+                                         hidden_size=hidden_size,
+                                         num_layers=num_layers,
                                          device=device)
         self.device = device
-        self.model = EncoderProcesserDecoderCustom(message_passing_num=message_passing_num, node_input_size=node_input_size, edge_input_size=edge_input_size).to(device)
+        self.model = EncoderProcesserDecoderCustom(message_passing_num=message_passing_num,
+                                                   node_input_size=node_input_size,
+                                                   edge_input_size=edge_input_size,
+                                                   scale_feature_layer=scale_feature_layer).to(device)
         # self.model = EncoderProcesserDecoder(message_passing_num=message_passing_num, node_input_size=node_input_size, edge_input_size=edge_input_size).to(device)
 
     def forward(self, graph: Data):
@@ -723,7 +751,6 @@ class MGN_custom(Simulator):
             graph.x = node_attr
             predicted, scale = self.model(graph)
             return predicted, scale
-
 
 
 

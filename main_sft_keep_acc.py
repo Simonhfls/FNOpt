@@ -1,5 +1,5 @@
 # run this file from the "Code" directory using
-# python main_sft.py --config_file=SMP_param_a_gated3a.yaml --config_name=default
+# python main.py --config_file=SMP_param_a_gated3a.yaml --config_name=default
 import logging
 import math
 import random
@@ -7,8 +7,11 @@ import subprocess
 import sys
 import os
 from pathlib import Path
+
 from matplotlib import pyplot as plt
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from Logger import Logger
 from dataset_cloth3 import DatasetCloth
 from dataset_utils import DatasetToSingleChannel
@@ -30,6 +33,8 @@ from pytorch3d.renderer import (
     FoVPerspectiveCameras,
     PerspectiveCameras, )
 from pytorch3d.io import load_obj
+
+from torch.profiler import profile, ProfilerActivity, record_function
 
 
 torch.autograd.set_detect_anomaly(False)
@@ -246,6 +251,9 @@ class Optimization():
         positions_net = self.rest_positions.transpose(0, 1).view(3, self.h, self.w).type(torch.float32)
         self.x = positions_net.clone().unsqueeze(0)
         # self.original_dataset.reset0_env(0)
+        # note set initial acceleration to zero
+        self.predicted_a = torch.zeros((self.simulation_frames + 1, 3, self.h, self.w), device=self.device, dtype=torch.float32)
+        self.original_dataset.set_acc(self.predicted_a)
 
         # g = -9.81 * self.length_conversion / (self.time_conversion * self.time_conversion)  # convert to NN units
         bc_indices = None
@@ -254,7 +262,6 @@ class Optimization():
         self.original_dataset.reset0_sft_env(self.x, bc_indices=bc_indices)        # todo check, no need ?
         # self.original_dataset.reset_position(positions_net)
         self.test_dataset = DatasetToSingleChannel(self.original_dataset)
-
         gravity = torch.tensor(self.scene_parameters["gravity"], device=self.device, dtype=torch.float32)
         self.external_forces = torch.tensor(gravity * self.length_conversion / (self.time_conversion * self.time_conversion), device=self.device, dtype=torch.float32).unsqueeze(0).unsqueeze(2).unsqueeze(3).requires_grad_(True)
         # self.external_forces = torch.tensor([0, 0, -1]).to(device).unsqueeze(0).unsqueeze(2).unsqueeze(3)       # default
@@ -290,7 +297,6 @@ class Optimization():
             # self.optimizer[i] = torch.optim.AdamW([self.parameters[i]], lr=learning_rates[i])
 
         self.loss = torch.tensor([0.], dtype=torch.float32).to(self.device)
-        self.predicted_a = torch.zeros((self.simulation_frames + 1, 3, self.h, self.w), device=self.device, dtype=torch.float32)
         self.scales = []
 
     def loadGroundTruth(self):
@@ -313,6 +319,7 @@ class Optimization():
                 mask = mask.unsqueeze(2)
             self.gt_images[i,:,:,3] = torch.mean(mask[self.scene_parameters["lower_left_corner"][0]:self.scene_parameters["upper_right_corner"][0],
                                                       self.scene_parameters["lower_left_corner"][1]:self.scene_parameters["upper_right_corner"][1], :3], dim=2)
+
 
         self.gt_images = self.gt_images / 255.0
         self.blurred_gt_images = self.gt_images.clone()
@@ -414,17 +421,17 @@ class Optimization():
     def resetState(self):
         positions_net = self.rest_positions.transpose(0, 1).view(3, self.h, self.w).type(torch.float32)
         with torch.no_grad():
-            self.original_dataset.reset_sft_env(0)
+            # note don't reset a
+            self.original_dataset.reset_sft_env(0, reset_a=False)
         self.original_dataset.set_position(positions_net)
         with torch.no_grad():
             self.positions[:] = self.rest_positions / self.length_conversion
             self.loss = torch.tensor([0.], dtype=torch.float32, device=self.device)
             # remove temporally and spatially constant part that could be modeled by wind
             # self.vertex_forces -= torch.mean(self.vertex_forces, dim=[1, 3, 4]).unsqueeze_(1).unsqueeze_(3).unsqueeze_(4)
-            # Note Modification3: I compute average vertex force on only already predicted frames instead of all frames
             mean_vf = self.vertex_forces[:, :self.frames_per_epoch].mean(dim=[1, 3, 4], keepdim=True)
             self.vertex_forces -= mean_vf
-            # Note Modification4: I added this to add the subtracted forces to the external forces
+            # Note Modification3: I added this to add the subtracted forces to the external forces
             #  -> Improves the results a bit
             self.external_forces += mean_vf[0]
             pass
@@ -495,9 +502,9 @@ class Optimization():
         self.original_dataset.set_optimizable(a_ext, self.stretching_stiffness, self.shearing_stiffness, self.bending_stiffness)
 
         last_iter = ((self.t_iter + 1) % params.inference.sft.iterations_per_timestep == 0)
-        grads, hidden_states = self.test_dataset.ask_sft(last_iter=last_iter)
+        grads, hidden_states = self.test_dataset.ask_sft(last_iter=last_iter, frame_counter=self.frame_counter)
         update_steps, new_hidden_states = self.cloth_net(grads, hidden_states)
-        _ = self.test_dataset.tell_sft(update_steps, new_hidden_states)
+        _ = self.test_dataset.tell_sft(update_steps, new_hidden_states, frame_counter=self.frame_counter)
         if params.inference.visualize_scaling:
             self.scales.append(new_hidden_states[0][2][0, 0, 0, 0].detach().cpu().numpy())
 
@@ -554,6 +561,7 @@ class Optimization():
                 self.loss = self.loss / self.frames_per_epoch
 
                 # VERTEX SHIFT REGULARIZATION
+                # self.vertex_shift_loss = torch.tensor([0.0]).to(self.device)
                 self.vertex_shift_loss = torch.zeros(1).to(self.device)
 
                 exponent = 2
@@ -565,7 +573,7 @@ class Optimization():
 
                 self.printQuantities()
 
-                # NOTE modification2: I deleted loss normalization, seems improving the results.
+                # NOTE modification2: I deleted loss normalization and it improves the results.
                 # loss_norm = self.loss.detach() + 1e-3
                 # self.loss = self.loss / loss_norm
                 self.loss.backward()

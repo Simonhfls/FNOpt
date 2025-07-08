@@ -3,9 +3,6 @@ import os
 import torch
 from torch.autograd import Function
 from torch.nn.functional import normalize
-import torch.nn as nn
-import torch.nn.functional as F
-import numpy as np
 
 # "pseudo function" that doesn't affect the outputs but only scales the gradients
 

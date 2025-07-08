@@ -67,9 +67,12 @@ def get_load_hyperparam(params):
 		return f"net {params.net.name}; mp {params.net.message_passing_steps};"
 	return f"net {params.net.name}; hs {params.net.hidden_size}; dt {params.cloth.dt};"
 
+cuda = torch.cuda.is_available()
+print('cuda available:', cuda)
+
 def toCuda(x):
 	if type(x) is tuple or type(x) is list:
-		return [xi.cuda() if params.opt.cuda else xi for xi in x]
+		return [xi.cuda() if cuda else xi for xi in x]
 	return x.cuda() if cuda else x
 
 def toCpu(x):
@@ -89,9 +92,12 @@ def get_params():
 		[
 			YamlConfig(
 				# 'fno_vertex.yaml', config_name='local', config_folder=config_folder
+				'fno_vertex.yaml', config_name='local_sft', config_folder=config_folder
 				# 'uno_vertex.yaml', config_name='local', config_folder=config_folder
-				'metamizer.yaml', config_name='local', config_folder=config_folder
+				# 'metamizer.yaml', config_name='local', config_folder=config_folder
+				# 'mgnrp.yaml', config_name='local', config_folder=config_folder
 				# 'meshgraphnets2.yaml', config_name='local', config_folder=config_folder
+				# 'test_solver.yaml', config_name='local', config_folder=config_folder
 
 			),
 			ArgparseConfig(infer_types=True, config_name=None, config_file=None),
@@ -104,8 +110,6 @@ def get_params():
 	return params
 
 
-
 params = get_params()
-# device = 'cuda' if params.opt.cuda else 'cpu'
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 cuda = True if torch.cuda.is_available() else False

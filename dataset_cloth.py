@@ -47,6 +47,7 @@ def loss(x_old,v_old,acc,force,bc_masks,bc_positions,M,stiffnesses,shearings,ben
 	E_stiff = stiffnesses*(stiffness_i + stiffness_j)
 	
 	# Davids version of shearing energy
+	# check device
 	angle_1 = torch.arccos(torch.einsum('abcd,abcd->acd',dx_n_i[:,:,:,:-1],dx_n_j[:,:,:-1]).clamp(eps-1,1-eps))
 	angle_2 = torch.arccos(torch.einsum('abcd,abcd->acd',dx_n_i[:,:,:,:-1],dx_n_j[:,:,1:]).clamp(eps-1,1-eps) )
 	angle_3 = torch.arccos(torch.einsum('abcd,abcd->acd',dx_n_i[:,:,:,1:] ,dx_n_j[:,:,:-1]).clamp(eps-1,1-eps))

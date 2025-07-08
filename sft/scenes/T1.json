@@ -1,14 +1,15 @@
 {
     "scene": "T1",
     "n_images": 49,
-    "mesh_file": "../datasets/pgsft/template_thuy.obj",
+    "dataset_dir": "../datasets/pgsft",
+    "mesh_file": "template_thuy.obj",
     "mesh_size": 2,
-    "texture_file": "../datasets/pgsft/T1/texture.jpg",
-    "image_files": "../datasets/pgsft/T1/rgbs_nvdiffrast/",
-    "mask_files": "../datasets/pgsft/T1/blurred_masks/",
+    "texture_file": "T1/texture.jpg",
+    "image_files": "T1/rgbs_nvdiffrast/",
+    "mask_files": "T1/blurred_masks/",
     "result_point_cloud_files": "../evaluation/T1/ours/point_cloud_",
     "result_chamfer_file": "../evaluation/T1/chamfer_distances_ours.pt",
-    "ground_truth_dir": "../datasets/pgsft/T1/surfaces/",
+    "ground_truth_dir": "T1/surfaces/",
     "camera_position": [
         1.0, 4.0, 2.0
     ],

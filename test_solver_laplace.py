@@ -3,34 +3,29 @@ sorry, this script is a bit messy...
 This script compares different solvers at solving the poisson equation. The height and width of the setup is specified by --height and --width parameters.
 To reproduce a specific comparison of Metamizer with other solvers, please uncomment the corresponding code sections below (see Lines 354-476)
 """
-
-
-
-from get_param import params,toCuda,toCpu,get_hyperparam,toDType
-import matplotlib.pyplot as plt
 from dataset_poisson import DatasetPoisson
-#from setups_multistep_1_channel import Dataset
-from dataset_utils import DatasetToSingleChannel
-from metamizer import get_Net
+from get_param2 import params,toCuda,toCpu,get_hyperparam,toDType, device
+import matplotlib.pyplot as plt
+# from dataset_poisson import DatasetPoisson
+from metamizer import get_Net3 as get_Net
+from metamizer import Metamizer
 from Logger import Logger
 import torch
 import numpy as np
-import time
-import os
 from derivatives import laplace,laplace_detach
 import scipy.sparse as sp
 import scipy.sparse.linalg as la
 import scipy
 import time
-from get_param import params,device
 from torch.optim import SGD,Adam,AdamW,RMSprop,Adagrad,Adadelta
-
+from metamizer import Metamizer
 
 torch.backends.cudnn.benchmark = True
 torch.set_float32_matmul_precision('high')
-
+print('height:', params.data.height, 'width:', params.data.width)
+ 
 def loss(x,bc_mask):
-	x = toDType(toCuda(torch.tensor(x).reshape(1,1,params.height,params.width)))
+	x = toDType(toCuda(torch.tensor(x).reshape(1,1,params.data.height,params.data.width)))
 	x = bc_mask*dataset.bc_values + (1-bc_mask)*x
 	
 	residuals = laplace(x)
@@ -38,9 +33,9 @@ def loss(x,bc_mask):
 	return loss.cpu().numpy()
 
 def loss_gt(x,x_gt,bc_mask):
-	x = toDType(toCuda(torch.tensor(x).reshape(1,1,params.height,params.width)))
+	x = toDType(toCuda(torch.tensor(x).reshape(1,1,params.data.height,params.data.width)))
 	x = bc_mask*dataset.bc_values + (1-bc_mask)*x
-	x_gt = x_gt.reshape(1,1,params.height,params.width)
+	x_gt = x_gt.reshape(1,1,params.data.height,params.data.width)
 	
 	loss = torch.sum((x-x_gt)**2*(1-bc_mask))/torch.sum(1-bc_mask)
 	return loss.cpu().numpy()
@@ -146,7 +141,7 @@ def generate_solver(optimizer,*args):
 	def grad_desc_solver(A,b,maxiter):
 		dataset.u[:] = 0
 		dataset.hidden_states[0] = None
-		x = torch.zeros(1,1,params.height,params.width,requires_grad = True,device=device)
+		x = torch.zeros(1,1,params.data.height,params.data.width,requires_grad = True,device=device)
 		optim = optimizer([x],*args)
 		
 		for i in range(maxiter):
@@ -167,16 +162,16 @@ def scipy_optimizer(maxiter,method):
 	dataset.hidden_states[0] = None
 	def jacobian(x):
 		# convert x to u
-		dataset.u[0,:] = toCuda(torch.tensor(x)).reshape(1,params.height,params.width)
+		dataset.u[0,:] = toCuda(torch.tensor(x)).reshape(1,params.data.height,params.data.width)
 		grads, _ = dataset.ask()
 		# convert grads to jacobian
-		jac = toCpu(grads.reshape(params.height*params.width)).numpy()
+		jac = toCpu(grads.reshape(params.data.height*params.data.width)).numpy()
 		return jac
 	
 	def fun(x):
 		return loss(x,dataset.bc_mask)
 	
-	x0 = np.zeros(params.height*params.width)
+	x0 = np.zeros(params.data.height*params.data.width)
 	x = scipy.optimize.minimize(fun=fun,x0=x0,method=method,jac=jacobian,tol=1e-40,options={"maxiter":maxiter,"maxcor":2})
 	#print(f"x: {x}")
 	return x.x
@@ -197,25 +192,25 @@ def pyamg_optimizer(A,b,x0,maxiter,rtol):
 	return x
 
 # Scipy CG solvers
-from scipy.sparse.linalg import spilu, LinearOperator
-from sksparse.cholmod import cholesky
-def scipy_cg_solver(A,b,x0,maxiter,rtol,preconditioner):
-	
-	if preconditioner=="AMG":
-		# Build a multigrid preconditioner using PyAMG
-		ml = smoothed_aggregation_solver(A)
-		M = ml.aspreconditioner()
-	elif preconditioner=="ILU":
-		# Build an ILU preconditioner
-		ilu = spilu(A,fill_factor=30)  # Incomplete LU factorization
-		M = LinearOperator(A.shape, matvec=lambda x: ilu.solve(x))  # Wrap as a linear operator
-	elif preconditioner=="IC":
-		# Build an IC preconditioner
-		chol = cholesky(A)  # Incomplete Cholesky factorization
-		M = LinearOperator(A.shape, matvec=lambda x: chol(x))
-	
-	x, info = la.cg(A, b, x0=x0, rtol=rtol, maxiter=maxiter, M=M) # TODO: replace by pyamg cg
-	return x
+# from scipy.sparse.linalg import spilu, LinearOperator
+# from sksparse.cholmod import cholesky
+# def scipy_cg_solver(A,b,x0,maxiter,rtol,preconditioner):
+#
+# 	if preconditioner=="AMG":
+# 		# Build a multigrid preconditioner using PyAMG
+# 		ml = smoothed_aggregation_solver(A)
+# 		M = ml.aspreconditioner()
+# 	elif preconditioner=="ILU":
+# 		# Build an ILU preconditioner
+# 		ilu = spilu(A,fill_factor=30)  # Incomplete LU factorization
+# 		M = LinearOperator(A.shape, matvec=lambda x: ilu.solve(x))  # Wrap as a linear operator
+# 	elif preconditioner=="IC":
+# 		# Build an IC preconditioner
+# 		chol = cholesky(A)  # Incomplete Cholesky factorization
+# 		M = LinearOperator(A.shape, matvec=lambda x: chol(x))
+#
+# 	x, info = la.cg(A, b, x0=x0, rtol=rtol, maxiter=maxiter, M=M) # TODO: replace by pyamg cg
+# 	return x
 
 """
 # PyAMGx solver (on GPU)
@@ -275,7 +270,7 @@ def pyamgx_optimizer(A,b,x0,maxiter,rtol,config="AGGREGATION_GS"):
 		solver_amgx.solve(b_amgx, x_amgx)
 		
 		# Download solution
-		sol = np.zeros(params.height*params.width)
+		sol = np.zeros(params.data.height*params.data.width)
 		x_amgx.download(sol)
 	
 	# Clean up:
@@ -296,13 +291,13 @@ def pyamgx_optimizer(A,b,x0,maxiter,rtol,config="AGGREGATION_GS"):
 metamizer = toDType(toCuda(get_Net(params)))
 #metamizer.nn = torch.compile(metamizer.nn)
 logger = Logger(get_hyperparam(params),use_csv=False,use_tensorboard=False)
-date_time,index = logger.load_state(metamizer,None,datetime=params.load_date_time,index=params.load_index)
+date_time,index = logger.load_state(metamizer,None,datetime=params.inference.load_date_time,index=params.inference.load_index)
 print(f"loaded: {date_time}, {index}")
 metamizer.eval()
 #metamizer.nn = torch.compile(metamizer.nn)
 
 
-dataset = DatasetPoisson(params.height,params.width,1,1,average_sequence_length=9999999999999999,tell_loss=False)
+dataset = DatasetPoisson(params.data.height,params.data.width,1,1,average_sequence_length=9999999999999999,tell_loss=False)
 dataset.reset0_env(0)
 #dataset.reset1_env(0)
 
@@ -315,7 +310,7 @@ bc_values = bc_values*bc_mask
 print("generating sparse matrix...")
 start = time.time()
 A,b = laplace_to_matrix(bc_values, bc_mask)
-x0 = np.zeros((params.height*params.width))
+x0 = np.zeros((params.data.height*params.data.width))
 print(f"done after {time.time()-start} s")
 
 
@@ -338,7 +333,7 @@ A,b = laplace_to_symmetric_matrix(laplace_bc_values, bc_mask)
 #print(np.all(A.diagonal()==1)) # die diagonale von A ist doch nicht die identity matrix?
 #exit()
 
-x0 = np.zeros((params.height*params.width))
+x0 = np.zeros((params.data.height*params.data.width))
 cp_A = cupyx.scipy.sparse.csc_matrix(A.copy())
 cp_A_diag = cupyx.scipy.sparse.diags(cp_A.diagonal())
 cp_A_diag_inv = cupyx.scipy.sparse.diags(cp_A.diagonal()**-1)
@@ -380,13 +375,13 @@ solvers = {"Metamizer": [lambda A,b,maxiter: neural_solver(maxiter), iterations[
 # comparison of different learning rates
 grad_optimizer = AdamW#Adagrad#Adam#SGD#Adadelta#
 grad_optimizer_name = "AdamW"#"Adagrad"#"Adam"#"SGD"#"Adadelta"#
-title = f"Metamizer and {grad_optimizer_name} (GPU) {params.height}x{params.width}"
+title = f"Metamizer and {grad_optimizer_name} (GPU) {params.data.height}x{params.data.width}"
 solvers = {"Metamizer": [lambda A,b,maxiter: neural_solver(maxiter), iterations[:10]]}
 solvers.update({f"{grad_optimizer_name} (lr={lr})": [generate_solver(grad_optimizer,lr), iterations[:13]] for lr in [0.1,0.03,0.01,0.003,0.001,0.0003,0.0001]}) # comparison of different learning rates
 """
 
 """
-title = f"Metamizer and CuPy (GPU) Sparse Linear System Solvers {params.height}x{params.width}"
+title = f"Metamizer and CuPy (GPU) Sparse Linear System Solvers {params.data.height}x{params.data.width}"
 solvers = {"Metamizer": [lambda A,b,maxiter: neural_solver(maxiter), iterations[:10]]
 		,"cuda_gmres": [lambda A,b,maxiter: cupyx.scipy.sparse.linalg.gmres(cp_A, cp_b, cp_x0, maxiter = maxiter, tol=1e-40)[0], iterations[:16]]
 		,"cuda_lsmr": [lambda A,b,maxiter: cupyx.scipy.sparse.linalg.lsmr(cp_A, cp_b, cp_x0, maxiter = maxiter, atol=1e-40)[0], iterations[:16]]
@@ -397,25 +392,25 @@ solvers = {"Metamizer": [lambda A,b,maxiter: neural_solver(maxiter), iterations[
 """
 
 
-title = f"Metamizer and GPU based Solvers {params.height}x{params.width}"
-solvers = {"Metamizer": [lambda A,b,maxiter: neural_solver(maxiter), iterations[:10]]
-		,"SGD (lr=0.01)": [generate_solver(SGD,0.01), iterations[:13]] # minimal loss: 2.41e-06
-		,"Adam (lr=0.01)": [generate_solver(Adam,0.01), iterations[:13]] # minimal loss: 6.57e-07
-		,"AdamW (lr=0.01)": [generate_solver(AdamW,0.01), iterations[:13]] # minimal loss: 7.18e-07
-		,"RMSprop (lr=0.01)": [generate_solver(RMSprop,0.01), iterations[:13]] # minimal loss: 8.23e-05
-		,"Adagrad (lr=0.1)": [generate_solver(Adagrad,0.1), iterations[:13]] # minimal loss: 2.77e-07
-		,"Adadelta (lr=0.1)": [generate_solver(Adadelta,0.1), iterations[:13]] # minimal loss: 9.71e-03
-		,"cuda_gmres": [lambda A,b,maxiter: cupyx.scipy.sparse.linalg.gmres(cp_A, cp_b, cp_x0, maxiter = maxiter, tol=1e-40)[0], iterations[:16]]
-		,"cuda_lsmr": [lambda A,b,maxiter: cupyx.scipy.sparse.linalg.lsmr(cp_A, cp_b, cp_x0, maxiter = maxiter, atol=1e-40)[0], iterations[:16]]
-		,"cuda_minres": [lambda A,b,maxiter: cupyx.scipy.sparse.linalg.minres(cp_A, cp_b, cp_x0, maxiter = maxiter, tol=1e-40)[0], iterations[:15]]
-		,"cuda_cg": [lambda A,b,maxiter: cupyx.scipy.sparse.linalg.cg(cp_A, cp_b, cp_x0, maxiter = maxiter, tol=1e-40)[0], iterations[:13]]
+title = f"Metamizer and GPU based Solvers {params.data.height}x{params.data.width}"
+solvers = {params.net.name: [lambda A,b,maxiter: neural_solver(maxiter), iterations[:10]]
+		# ,"SGD (lr=0.01)": [generate_solver(SGD,0.01), iterations[:13]] # minimal loss: 2.41e-06
+		# ,"Adam (lr=0.01)": [generate_solver(Adam,0.01), iterations[:13]] # minimal loss: 6.57e-07
+		# ,"AdamW (lr=0.01)": [generate_solver(AdamW,0.01), iterations[:13]] # minimal loss: 7.18e-07
+		# ,"RMSprop (lr=0.01)": [generate_solver(RMSprop,0.01), iterations[:13]] # minimal loss: 8.23e-05
+		# ,"Adagrad (lr=0.1)": [generate_solver(Adagrad,0.1), iterations[:13]] # minimal loss: 2.77e-07
+		# ,"Adadelta (lr=0.1)": [generate_solver(Adadelta,0.1), iterations[:13]] # minimal loss: 9.71e-03
+		# ,"cuda_gmres": [lambda A,b,maxiter: cupyx.scipy.sparse.linalg.gmres(cp_A, cp_b, cp_x0, maxiter = maxiter, tol=1e-40)[0], iterations[:16]]
+		# ,"cuda_lsmr": [lambda A,b,maxiter: cupyx.scipy.sparse.linalg.lsmr(cp_A, cp_b, cp_x0, maxiter = maxiter, atol=1e-40)[0], iterations[:16]]
+		# ,"cuda_minres": [lambda A,b,maxiter: cupyx.scipy.sparse.linalg.minres(cp_A, cp_b, cp_x0, maxiter = maxiter, tol=1e-40)[0], iterations[:15]]
+		# ,"cuda_cg": [lambda A,b,maxiter: cupyx.scipy.sparse.linalg.cg(cp_A, cp_b, cp_x0, maxiter = maxiter, tol=1e-40)[0], iterations[:13]]
 		#,"cuda_cgs": [lambda A,b,maxiter: cupyx.scipy.sparse.linalg.cgs(cp_A, cp_b, cp_x0, maxiter = maxiter, tol=1e-40)[0], iterations[:13]]
 		}
 
 
 """
 # to run this comparison with AMGX, please install AMGX and pyamgx and uncomment L 220-293.
-title = f"Metamizer and GPU based AMGX {params.height}x{params.width}"
+title = f"Metamizer and GPU based AMGX {params.data.height}x{params.data.width}"
 solvers = {"Metamizer": [lambda A,b,maxiter: neural_solver(maxiter), iterations[:10]]}|\
 		{config: [lambda A,b,maxiter: pyamgx_optimizer(A, b, x0, maxiter = maxiter,rtol=1e-40,config=config), iterations[:12]] for config in ["AGGREGATION_GS"]}|\
 		{config: [lambda A,b,maxiter: pyamgx_optimizer(A, b, x0, maxiter = maxiter,rtol=1e-40,config=str(config)), [10,10,20,50,100,200,500]] for config in ["AMG_CLASSICAL_L1_TRUNC","AMG_CLASSICAL_L1_AGGRESSIVE_HMIS","FGMRES_CLASSICAL_AGGRESSIVE_HMIS","PBICGSTAB"]}
@@ -430,7 +425,7 @@ solvers = {"Metamizer": [lambda A,b,maxiter: neural_solver(maxiter), iterations[
 """
 
 """
-title = f"Metamizer and CuPy (GPU) Sparse Linear System Solvers (Jacobi Preconditioner) {params.height}x{params.width}"
+title = f"Metamizer and CuPy (GPU) Sparse Linear System Solvers (Jacobi Preconditioner) {params.data.height}x{params.data.width}"
 solvers = {"Metamizer": [lambda A,b,maxiter: neural_solver(maxiter), iterations[:10]]
 		,"cuda_gmres": [lambda A,b,maxiter: cupyx.scipy.sparse.linalg.gmres(cp_A, cp_b, cp_x0, maxiter = maxiter, tol=1e-40, M=M)[0], iterations[:16]]
 		#,"cuda_lsmr": [lambda A,b,maxiter: cupyx.scipy.sparse.linalg.lsmr(cp_A, cp_b, cp_x0, maxiter = maxiter, atol=1e-40)[0], iterations[:16]] # no Preconditioner available
@@ -441,7 +436,7 @@ solvers = {"Metamizer": [lambda A,b,maxiter: neural_solver(maxiter), iterations[
 """
 
 """
-title = f"Metamizer and Scipy (CPU) Sparse Linear System Solvers {params.height}x{params.width}"
+title = f"Metamizer and Scipy (CPU) Sparse Linear System Solvers {params.data.height}x{params.data.width}"
 solvers = {"Metamizer": [lambda A,b,maxiter: neural_solver(maxiter), iterations[:10]]
 		,"cg": [lambda A,b,maxiter: la.cg(A.copy(), b.copy(), x0.copy(), maxiter = maxiter, rtol=1e-34)[0], iterations[:13]]
 		#,"cgs": [lambda A,b,maxiter: la.cgs(A.copy(), b.copy(), x0.copy(), maxiter = maxiter, rtol=1e-34)[0], iterations[:14]] # weird results
@@ -457,7 +452,7 @@ solvers = {"Metamizer": [lambda A,b,maxiter: neural_solver(maxiter), iterations[
 
 """
 #A = sp.csr_matrix(A)
-title = f"Metamizer and preconditioned SciPy (CPU) Sparse Linear System Solvers {params.height}x{params.width}"
+title = f"Metamizer and preconditioned SciPy (CPU) Sparse Linear System Solvers {params.data.height}x{params.data.width}"
 solvers = {"Metamizer": [lambda A,b,maxiter: neural_solver(maxiter), iterations[:10]]
 		#,"pyAMG": [lambda A,b,maxiter: pyamg_optimizer(A.copy(), b.copy(), x0.copy(), maxiter = maxiter, rtol=1e-34), iterations[:7]] # quasi genauso schnell wie scipy AMG
 		,"AMG": [lambda A,b,maxiter: scipy_cg_solver(A.copy(), b.copy(), x0.copy(), maxiter = maxiter, rtol=1e-34,preconditioner="AMG"), iterations[:7]]
@@ -466,7 +461,7 @@ solvers = {"Metamizer": [lambda A,b,maxiter: neural_solver(maxiter), iterations[
 """
 
 """
-title = f"Metamizer and Scipy (CPU) Optimizers {params.height}x{params.width}"
+title = f"Metamizer and Scipy (CPU) Optimizers {params.data.height}x{params.data.width}"
 solvers = {"Metamizer": [lambda A,b,maxiter: neural_solver(maxiter), iterations[:10]]
 		#,"Powell": [lambda A,b,maxiter: scipy_optimizer(maxiter,"Powell"), iterations[:10]] # way too slow
 		,"Newton-CG": [lambda A,b,maxiter: scipy_optimizer(maxiter,"Newton-CG"), iterations[:7]]
@@ -484,7 +479,7 @@ print("cupy spsolve...")
 start = time.time()
 x_spsolve = cupyx.scipy.sparse.linalg.spsolve(cp_A, cp_b)
 duration = time.time()-start
-x_spsolve = x_spsolve.reshape(params.height,params.width)
+x_spsolve = x_spsolve.reshape(params.data.height,params.data.width)
 print(f"loss: {loss(x_spsolve,dataset.bc_mask)} after {duration} s")
 """
 
@@ -495,7 +490,7 @@ print("spsolve...")
 start = time.time()
 x_spsolve = la.spsolve(A.copy(), b.copy())
 duration = time.time()-start
-x_spsolve = x_spsolve.reshape(params.height,params.width)
+x_spsolve = x_spsolve.reshape(params.data.height,params.data.width)
 print(f"loss: {loss(x_spsolve,dataset.bc_mask)} after {duration} s")
 """
 
@@ -503,15 +498,15 @@ print(f"loss: {loss(x_spsolve,dataset.bc_mask)} after {duration} s")
 for solver in solvers.keys():
 	print(f"solver: {solver}")
 	for maxiter in solvers[solver][1]:
-		print(f"maxiter: {maxiter}")
+		# print(f"maxiter: {maxiter}")
 		start = time.time()
 		x = solvers[solver][0](A,b,maxiter)
 		results[solver]["time [s]"].append(time.time()-start)
 		results[solver]["iterations"].append(maxiter)
-		results[solver]["loss"].append(loss(x.reshape(params.height,params.width),dataset.bc_mask))
-		results[solver]["loss_gt"].append(loss_gt(x.reshape(params.height,params.width),x_gt,dataset.bc_mask))
-		print(f"loss: {results[solver]['loss'][-1]} after {results[solver]['time [s]'][-1]} s")
-
+		results[solver]["loss"].append(loss(x.reshape(params.data.height,params.data.width),dataset.bc_mask))
+		results[solver]["loss_gt"].append(loss_gt(x.reshape(params.data.height,params.data.width),x_gt,dataset.bc_mask))
+		# print(f"loss: {results[solver]['loss'][-1]} after {results[solver]['time [s]'][-1]} s")
+		print(f"maxiter: {maxiter:>5} | loss: {results[solver]['loss'][-1]:.2e} | time: {results[solver]['time [s]'][-1]:.2e} s")
 
 # visualize performance curves (residuals vs #iterations / runtime)
 dpi=200

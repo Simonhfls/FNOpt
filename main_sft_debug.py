@@ -38,7 +38,7 @@ from pytorch3d.io import load_obj, save_obj
 
 
 
-torch.autograd.set_detect_anomaly(True)
+torch.autograd.set_detect_anomaly(False)
 
 
 def test_grad_tensor(x):

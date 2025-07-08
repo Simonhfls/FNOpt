@@ -2,10 +2,8 @@ import math
 import os
 import sys
 import uuid
-
 from dataset_utils import DatasetToSingleChannel
 from utils import generate_ffmpeg_cmd, get_unique_filename
-
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from matplotlib.colors import LightSource
 from Logger import Logger
@@ -15,7 +13,6 @@ from metamizer import get_Net2 as get_Net
 from sft import evaluation
 from sft.render import opencv_projection, ComputeViewMatrix, render_pytorch, render_nvdiffrast
 from sft.utils import loadJson, grid_to_trimesh_faces
-
 import subprocess
 import numpy as np
 from pytorch3d.transforms import axis_angle_to_matrix
@@ -551,22 +548,21 @@ def main():
         opt.initialize(scene=scene, evaluate=False)
         while (opt.t_iter < simulation_frames * params.inference.iterations_per_timestep):
             opt.step()
-        print(
-            "------+--------+-----------+-------------------------+-------------------------------------------------------------------------------------")
+        print("------+--------+-----------+-------------------------+-------------------------------------------------------------------------------------")
         time2 = time.perf_counter()
         print(f"Done in {(time2 - time1): .2f} s, per frame: {((time2 - time1) / params.inference.rollout.n_frames):.2f}s")
 
         if params.inference.rollout.save_render:
             print(f"Generating render video for resolution {opt.mesh_resolution}")
             render_dir = opt.dir_rgb
-            output_file = get_unique_filename(f"V_RGB_{params.net.name}{params.inference.postfix}_RES{opt.mesh_resolution}_Y{params.inference.material.stretching}_S{params.inference.material.shearing}_B{params.inference.material.bending}_EP{opt.load_index}_FPS{params.inference.framerate}_iters{params.inference.iterations_per_timestep}_{params.inference.renderer}.mp4",
+            output_file = get_unique_filename(f"V_RGB_{params.net.name}{params.inference.postfix}_RES{opt.mesh_resolution}_Y{params.inference.material.stretching}_S{params.inference.material.shearing}_B{params.inference.material.bending}_EP{opt.load_index}_FPS{params.inference.rollout.framerate}_iters{params.inference.iterations_per_timestep}_{params.inference.renderer}.mp4",
                                               output_dir=os.path.dirname(render_dir))
 
             ffmpeg_cmd = generate_ffmpeg_cmd(
                 render_dir=render_dir,
                 output_file=output_file,
                 output_dir=os.path.dirname(render_dir),
-                framerate=params.inference.framerate,
+                framerate=params.inference.rollout.framerate,
                 n_frames=params.inference.rollout.n_frames
             )
             # execute ffmpeg to render images
@@ -593,14 +589,14 @@ def main():
             opt.save_acc_visu()
             print(f"Generating accuracy heatmap video for resolution {opt.mesh_resolution}")
             acc_render_dir = opt.dir_acc
-            output_file = get_unique_filename(f"V_ACC_{params.net.name}{params.inference.postfix}_RES{opt.mesh_resolution}_Y{params.inference.material.stretching}_S{params.inference.material.shearing}_B{params.inference.material.bending}_EP{opt.load_index}_FPS{params.inference.framerate}.mp4",
+            output_file = get_unique_filename(f"V_ACC_{params.net.name}{params.inference.postfix}_RES{opt.mesh_resolution}_Y{params.inference.material.stretching}_S{params.inference.material.shearing}_B{params.inference.material.bending}_EP{opt.load_index}_FPS{params.inference.rollout.framerate}.mp4",
                                               output_dir=os.path.dirname(acc_render_dir))
 
             ffmpeg_cmd = generate_ffmpeg_cmd(
                 render_dir=acc_render_dir,
                 output_dir=os.path.dirname(acc_render_dir),
                 output_file=output_file,
-                framerate=params.inference.framerate,
+                framerate=params.inference.rollout.framerate,
                 n_frames=params.inference.rollout.n_frames
             )
             try:
@@ -627,7 +623,7 @@ def main():
                 render_dir=opt.path_metamizer,
                 output_file=output_file,
                 output_dir=os.path.dirname(render_dir),
-                framerate=params.inference.framerate,
+                framerate=params.inference.rollout.framerate,
                 n_frames=params.inference.rollout.n_frames
             )
 

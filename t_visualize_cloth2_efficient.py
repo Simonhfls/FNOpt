@@ -60,9 +60,6 @@ if __name__ == '__main__':
 	g_vect = toCuda(torch.tensor([0, 0, -9.81])).unsqueeze(0).unsqueeze(2).unsqueeze(3)  # gravity vector. CODO: radnom directions / strengths of gravity
 	a_exts = toCuda(torch.ones(1, 3, params.inference.height,params.inference.width)) * g_vect
 	a_exts = a_exts * length_conversion / 50**2  # convert to m/s^2
-	# a_exts = a_exts * 32 / 50**2  # convert to m/s^2	todo delete
-	# a_exts = torch.zeros_like(a_exts)
-	print('a_exts:', a_exts)
 	with torch.no_grad():
 		for epoch in range(1):
 			original_dataset = DatasetCloth(params.inference.height,params.inference.width,1,1,n_frames,iterations_per_timestep=params.inference.iterations_per_timestep,stiffness_range=params.cloth.stretching_range,shearing_range=params.cloth.shearing_range,bending_range=params.cloth.bending_range,a_ext_range=params.cloth.g)
@@ -74,13 +71,19 @@ if __name__ == '__main__':
 			original_dataset.bendings[:] = B
 
 			dataset = DatasetToSingleChannel(original_dataset)
+			# dataset.ask_sft = torch.compile(dataset.ask_sft, backend="inductor", mode="reduce-overhead")
+			print('height:', params.inference.height)
+			print('width:', params.inference.width)
+			print('iteration per timestep:',params.inference.iterations_per_timestep)
 			print('total iterations:',n_frames*params.inference.iterations_per_timestep)
+
 			FPS=0
 			start_time = time.time()
 			for t in range(n_frames*params.inference.iterations_per_timestep):
-				print(f"t: {t}")
-				grads, hidden_states = dataset.ask()
-				# grads, hidden_states = dataset.ask_sft()
+				if t % 50 == 0:
+					print(f"t: {t}")
+				# grads, hidden_states = dataset.ask()
+				grads, hidden_states = dataset.ask_sft()
 				update_steps, new_hidden_states = metamizer(grads, hidden_states)
 				loss = dataset.tell(update_steps, new_hidden_states)
 				scales.append(new_hidden_states[0][2][0,0,0,0].detach().cpu().numpy())

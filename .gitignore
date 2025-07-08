@@ -1,10 +1,14 @@
 **__pycache__**
+.idea
+.DS_Store
 Logs/**
 plots/**
 evaluation/**
 data/**
-.idea
-.DS_Store
-Logger/**
 ruochen
 debug
+# add this file
+Logger/**
+!Logger/
+!Logger/net FNOVertex; hs 64; dt 1;/
+!Logger/net FNOVertex; hs 64; dt 1;/2025-06-20 01:59:00

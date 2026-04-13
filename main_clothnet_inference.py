@@ -2,7 +2,7 @@ import os
 import sys
 import logging
 import traceback
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from render_utils import setup_evaluation_logger, check_frame, generate_heatmap_video, try_acquire_lock, release_lock, \
     render_single, render_video_with_gt
 from rollout import Rollout

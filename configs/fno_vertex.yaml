@@ -139,8 +139,8 @@ default: &DEFAULT
       using_handle_traj: 0
       save_acc_heatmap: 1
       wind_density: 0.0
-      save_npy: 0
-      evaluate: 1
+      save_npy: 1
+      evaluate: 0
       framerate: 60
       show_handle_points: 1
       log_repulsive: 0
@@ -235,7 +235,7 @@ rollout_handle_eval: &rollout_handle_eval
   save_acc_heatmap: 0
   save_render_3d: 1
   using_handle_traj: 1
-  evaluate: 1
+  evaluate: 0
   input_data:
     motion_code: eval
     mode: with_gt       # [arbitrary, with_gt]

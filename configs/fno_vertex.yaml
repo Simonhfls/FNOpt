@@ -115,7 +115,7 @@ default: &DEFAULT
   inference: &DEFAULT_INFERENCE
     load_date_time: "??"
     load_index: null
-    visualize_3d: 0
+    visualize_3d: 1
     visualize_scaling: 0
     visualize_grads: 0
     save_obj: 0
@@ -168,9 +168,9 @@ default: &DEFAULT
 rollout_handle_full: &rollout_handle_full
   <<: *DEFAULT_ROLLOUT
   json: ["configs/scenes/S_MGNRP_res32.json"]
-  save_render: 0
+  save_render: 1
   save_acc_heatmap: 0
-  save_render_3d: 1
+  save_render_3d: 0
   using_handle_traj: 1
   input_data:
     motion_code: full
@@ -181,9 +181,9 @@ rollout_handle_full: &rollout_handle_full
 rollout_handle_regular: &rollout_handle_regular
   <<: *DEFAULT_ROLLOUT
   json: ["configs/scenes/S_MGNRP_res32.json"]
-  save_render: 0
+  save_render: 1
   save_acc_heatmap: 0
-  save_render_3d: 1
+  save_render_3d: 0
   using_handle_traj: 1
   input_data:
     motion_code: regular
@@ -195,9 +195,9 @@ rollout_handle_regular: &rollout_handle_regular
 rollout_handle_fancy: &rollout_handle_fancy
   <<: *DEFAULT_ROLLOUT
   json: ["configs/scenes/S_MGNRP_res32.json"]
-  save_render: 0
+  save_render: 1
   save_acc_heatmap: 0
-  save_render_3d: 1
+  save_render_3d: 0
   using_handle_traj: 1
   input_data:
     motion_code: fancy
@@ -215,13 +215,13 @@ rollout_handle_debug: &rollout_handle_debug
 #  json: ["configs/scenes/S_MGNRP_32x32.json"]
 #  json: ["configs/scenes/S_MGNRP_res32_bc_corner_center.json"]
 #  json: ["configs/scenes/S_MGNRP_res32_bc_single_corner.json"]
-  save_render: 0
+  save_render: 1
   save_acc_heatmap: 0
   save_render_3d: 0
   save_render_fnopt: 1
   using_handle_traj: 1
   input_data:
-    motion_code: rot_h1
+    motion_code: xy_v2
     mode: with_gt       # [arbitrary, with_gt]
     obj_code: square_1024
     speed: 1
@@ -235,7 +235,7 @@ rollout_handle_eval: &rollout_handle_eval
   save_acc_heatmap: 0
   save_render_3d: 1
   using_handle_traj: 1
-  evaluate: 0
+  evaluate: 1
   input_data:
     motion_code: eval
     mode: with_gt       # [arbitrary, with_gt]
@@ -268,7 +268,7 @@ e11: &e11
 
   inference: &inference_e11
     <<: *DEFAULT_INFERENCE
-    load_date_time: "2025-06-10 23:41:40"
+    load_date_time: "??" # replace with the trained model
     postfix: "e11"
     iterations_per_timestep: 10
     average_sequence_length: 500
@@ -285,7 +285,7 @@ handle_e11:
   inference:
     <<: *inference_e11
     rollout:
-      <<: *rollout_handle_eval
+      <<: *rollout_handle_full
       wind_density: 1.0
 
 

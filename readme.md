@@ -45,13 +45,6 @@ cd ..
 ```
 
 
-## Pretrained Model
-
-The trained FNOpt model is available for download at: **[link]**
-
-After downloading, place the model checkpoint in the `Logger/` directory, preserving the folder structure.
-
-
 ## Training
 
 To train the model:
@@ -62,6 +55,12 @@ python train.py --config_file fno_vertex.yaml --config_name e11
 
 
 ## Inference
+
+
+### Download MeshgraphnetRP dataset
+Visit https://github.com/iandlibao/meshgraphnetrp and download the input data. Place it in `../meshgraphnet_rp/input`, or update the `gt_data_dir` path in your config file.
+
+
 
 To run inference:
 

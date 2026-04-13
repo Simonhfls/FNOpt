@@ -1,0 +1,30 @@
+{
+    "scene": "S_MGNRP",
+    "dataset_dir": "assets",
+    "mesh_file": "template_mgnrp_quad_64.obj",
+    "mesh_resolution": 64,
+    "mesh_size": 1,
+    "transform": {
+        "rotate": [
+            90,
+            1,
+            0,
+            0
+        ],
+        "translate": [
+            0,
+            0,
+            0
+        ]
+    },
+    "gravity": [
+        0,
+        0,
+        -9.76
+    ],
+    "handle_ind_list": [
+        2016
+    ],
+    "bc_desc": "single-center",
+    "gt_data_dir": "../meshgraphnet_rp/input"
+}

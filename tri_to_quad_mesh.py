@@ -74,7 +74,7 @@ def uv_to_3d_positions(grid_uv, uv, V, F):
     """
     For each UV grid point, find which triangle it lies in and interpolate its 3D position.
     """
-    from matplotlib.tri import Triangulation, LinearTriInterpolator
+    from matplotlib.tri import Triangulation
 
     tri = Triangulation(uv[:, 0], uv[:, 1], F)
     interpolated_positions = []
@@ -156,6 +156,7 @@ def save_quadmesh_obj_with_uv(filename, vertices_3d, faces_quad, uv_grid):
         for face in faces_quad:
             v0, v1, v2, v3 = face  # vertex indices
             f.write(f"f {v0 + 1}/{v0 + 1} {v1 + 1}/{v1 + 1} {v2 + 1}/{v2 + 1} {v3 + 1}/{v3 + 1}\n")
+    print(f"Saved quad mesh with UVs to {filename}")
 
 
 def batch_trimesh_to_quadmesh(vertices_seq, faces, uv, resolution=(50, 50)):
@@ -167,7 +168,7 @@ def batch_trimesh_to_quadmesh(vertices_seq, faces, uv, resolution=(50, 50)):
         resolution: UV grid resolution (nx, ny)
     Returns:
         quad_verts_tensor: (N_frames, ny, nx, 3)
-        quads: (n_quads, 4) index tensor for quad faces
+        quads: (n_quads, 3) index tensor for quad faces
     """
     nx, ny = resolution
     grid_uv = generate_uv_grid(nx, ny, inv_u=False, inv_v=True, flatten=True)  # (nx*ny, 2)
@@ -196,108 +197,80 @@ def batch_trimesh_to_quadmesh(vertices_seq, faces, uv, resolution=(50, 50)):
 
 
 
-import torch
-
-def uv_to_3d_positions_torch(grid_uv, uv_vertex, vertices_seq, faces):
-    """
-    Args:
-        grid_uv: (M, 2) UV query points
-        uv_vertex: (V, 2) UVs per vertex
-        vertices_seq: (N, V, 3)
-        faces: (F, 3)
-    Returns:
-        interpolated: (N, M, 3)
-    """
+def batch_trimesh_to_quadmesh_torch(vertices_seq, faces, uv_per_vertex, resolution=(50, 50), eps=1e-6):
     device = vertices_seq.device
-    N = vertices_seq.shape[0]
-    M = grid_uv.shape[0]
-    F = faces.shape[0]
-
-    # Get per-face UVs: (F, 3, 2)
-    uv_faces = uv_vertex[faces]  # (F, 3, 2)
-
-    # === Compute barycentric coords ===
-    v0 = uv_faces[:, 1] - uv_faces[:, 0]  # (F, 2)
-    v1 = uv_faces[:, 2] - uv_faces[:, 0]  # (F, 2)
-    v2 = grid_uv.unsqueeze(1) - uv_faces[:, 0]  # (M, F, 2)
-
-    d00 = (v0 * v0).sum(dim=1)  # (F,)
-    d01 = (v0 * v1).sum(dim=1)
-    d11 = (v1 * v1).sum(dim=1)
-    d20 = (v2 * v0).sum(dim=2)  # (M, F)
-    d21 = (v2 * v1).sum(dim=2)
-
-    denom = d00 * d11 - d01 * d01 + 1e-8  # avoid div by 0
-    v = (d11 * d20 - d01 * d21) / denom  # (M, F)
-    w = (d00 * d21 - d01 * d20) / denom
-    u = 1.0 - v - w
-
-    mask = (u >= 0) & (v >= 0) & (w >= 0)
-    hit_face_idx = torch.argmax(mask.int(), dim=1)  # (M,)
-
-    # Gather bary coords for selected face
-    u_valid = u[torch.arange(M), hit_face_idx].unsqueeze(0).repeat(N, 1)  # (N, M)
-    v_valid = v[torch.arange(M), hit_face_idx].unsqueeze(0).repeat(N, 1)
-    w_valid = w[torch.arange(M), hit_face_idx].unsqueeze(0).repeat(N, 1)
-
-    selected_faces = faces[hit_face_idx]  # (M, 3)
-
-    v0 = vertices_seq[:, selected_faces[:, 0]]  # (N, M, 3)
-    v1 = vertices_seq[:, selected_faces[:, 1]]
-    v2 = vertices_seq[:, selected_faces[:, 2]]
-
-    interpolated = (
-        u_valid.unsqueeze(-1) * v0 +
-        v_valid.unsqueeze(-1) * v1 +
-        w_valid.unsqueeze(-1) * v2
-    )  # (N, M, 3)
-
-    return interpolated
-
-
-def batch_trimesh_to_quadmesh_torch(vertices_seq, faces, uv_coords, resolution=(50, 50)):
-    """
-    Converts N-frame triangle mesh sequence into N-frame quad vertex grid.
-
-    Args:
-        vertices_seq: (N, V, 3) FloatTensor
-        faces: (F, 3) LongTensor
-        uv_coords: (F, 3, 2) FloatTensor
-        resolution: (nx, ny)
-
-    Returns:
-        quad_verts_tensor: (N, ny, nx, 3)
-        quads: (num_quads, 4) LongTensor
-    """
+    N, V, _ = vertices_seq.shape
     nx, ny = resolution
-    # Create uniform UV grid (H * W, 2)
-    u = torch.linspace(0, 1, nx)
-    v = torch.linspace(0, 1, ny)
-    uu, vv = torch.meshgrid(u, v, indexing='ij')
-    grid_uv = torch.stack([uu, 1 - vv], dim=-1).reshape(-1, 2).to(vertices_seq.device)  # (nx*ny, 2)
 
-    # Interpolate each frame's mesh to the UV grid
-    interpolated = uv_to_3d_positions_torch(grid_uv, uv_coords, vertices_seq, faces)  # (N, nx*ny, 3)
-    quad_verts_tensor = interpolated.reshape(vertices_seq.shape[0], ny, nx, 3)  # (N, ny, nx, 3)
+    grid_uv_np = generate_uv_grid(nx, ny, inv_u=False, inv_v=True, flatten=True)  # (nx*ny,2)
+    grid_uv = torch.from_numpy(grid_uv_np).to(device).double()
+    M = grid_uv.shape[0]
 
-    # Build quad face indices once
+    uv = uv_per_vertex.to(device).double()  # (V,2)
+    F = faces.to(device)  # (F,3)
+    uv_f = uv[F]  # (F,3,2)
+    p0, p1, p2 = uv_f.unbind(dim=1)  # each (F,2)
+    v0 = p1 - p0  # (F,2)
+    v1 = p2 - p0  # (F,2)
+
+    dot00 = (v0 * v0).sum(1)  # (F,)
+    dot01 = (v0 * v1).sum(1)
+    dot11 = (v1 * v1).sum(1)
+    invDen = 1.0 / (dot00 * dot11 - dot01 * dot01)  # (F,)
+
+    guv = grid_uv.unsqueeze(1)  # (M,1,2)
+    p0e = p0.unsqueeze(0)  # (1,F,2)
+    v0e = v0.unsqueeze(0)
+    v1e = v1.unsqueeze(0)
+    invDe = invDen.unsqueeze(0)  # (1,F)
+
+    v2 = guv - p0e  # (M,F,2)
+    dot02 = (v0e * v2).sum(2)  # (M,F)
+    dot12 = (v1e * v2).sum(2)  # (M,F)
+
+    u_coords = (dot11.unsqueeze(0) * dot02 - dot01.unsqueeze(0) * dot12) * invDe  # (M,F)
+    v_coords = (dot00.unsqueeze(0) * dot12 - dot01.unsqueeze(0) * dot02) * invDe  # (M,F)
+
+    cond = (u_coords >= -eps) & (v_coords >= -eps) & (u_coords + v_coords <= 1 + eps)  # (M,F)
+    face_idx = cond.float().argmax(1)  # (M,)
+
+    u_sel = u_coords[torch.arange(M, device=device), face_idx]
+    v_sel = v_coords[torch.arange(M, device=device), face_idx]
+    w_sel = 1.0 - u_sel - v_sel
+    u_sel = u_sel.clamp(0.0, 1.0)
+    v_sel = v_sel.clamp(0.0, 1.0)
+    w_sel = w_sel.clamp(0.0, 1.0)
+
+    f0 = F[face_idx, 0]
+    f1 = F[face_idx, 1]
+    f2 = F[face_idx, 2]
+
+    v0_3d = vertices_seq[:, f0, :].double()
+    v1_3d = vertices_seq[:, f1, :].double()
+    v2_3d = vertices_seq[:, f2, :].double()
+
+    w = w_sel.view(1, M, 1)
+    u_w = u_sel.view(1, M, 1)
+    v_w = v_sel.view(1, M, 1)
+    pts = w * v0_3d + u_w * v1_3d + v_w * v2_3d  # (N, M, 3)
+
+    quad_verts = pts.view(N, ny, nx, 3).float()
+
     quads = []
-    for j in range(nx - 1):  # column
-        for i in range(ny - 1):  # row
+    for j in range(nx - 1):
+        for i in range(ny - 1):
             idx0 = j * ny + i
             idx1 = (j + 1) * ny + i
-            idx2 = (j + 1) * ny + i + 1
-            idx3 = j * ny + i + 1
+            idx2 = (j + 1) * ny + (i + 1)
+            idx3 = j * ny + (i + 1)
             quads.append([idx0, idx1, idx2, idx3])
-    quads = torch.tensor(quads, dtype=torch.long, device=vertices_seq.device)
+    quads = torch.tensor(quads, dtype=torch.long, device=device)
 
-    return quad_verts_tensor, quads
-
-
+    return quad_verts, quads
 
 
 if __name__ == "__main__":
-    obj_example_path = "/Users/ruochen/Documents/liris_code/meshgraphnet_rp/input/unity_demo/square_1024.obj"
+    obj_example_path = "./square_1024.obj"
     resolution = 16
     quad_verts, quad_faces = trimesh_to_quadmesh_from_uv(obj_example_path, resolution=(resolution, resolution))
 

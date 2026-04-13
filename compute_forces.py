@@ -1,13 +1,7 @@
-
 import torch
 from torch.nn.functional import normalize
 import torch_scatter
-
-import platform
-if platform.machine() == 'AMD64' or platform.machine() == 'x86_64':
-    device = torch.device('cuda')
-elif platform.machine() == 'arm64':
-    device = torch.device('cpu')
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 def compute_wind_force(cloth_m_npy, cloth_f_area_npy, face_tensor, cloth_v, cloth_pos, wind_density=1.0):
     """
@@ -22,11 +16,10 @@ def compute_wind_force(cloth_m_npy, cloth_f_area_npy, face_tensor, cloth_v, clot
     
     #some constants
     wind_v = torch.zeros(face_tensor.shape).to(device)
-    #wind_v = torch.tensor([2.5,0.,3.]).repeat(face_tensor.shape[0], 1).to(device)
     wind_density = torch.ones(face_tensor.shape[0], 1).to(device) * wind_density
     wind_drag = torch.zeros(face_tensor.shape[0], 1).to(device)
 
-    fext_list = torch.zeros_like(cloth_m_npy)
+    fext_list = torch.zeros(cloth_v.shape[0], 1).to(device)
 
     vface = (torch.index_select(input=cloth_v, dim=0, index=face_tensor[:,0]) + 
                 torch.index_select(input=cloth_v, dim=0, index=face_tensor[:,1]) +

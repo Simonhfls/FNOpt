@@ -1,24 +1,22 @@
-import os
-
 import torch
-# import igl
-
-
 class GridMesh:
     def __init__(
         self,
         height: int,
         width: int,
         *,
-        side_length: float = 1.0,
+        side_length_h: float = 1.0,
+        side_length_w: float = 1.0,
         mass: float = 1.0,
     ):
-        self.side_length = side_length
+        self.side_length_h = side_length_h
+        self.side_length_w = side_length_w
         self.width = width
         self.height = height
 
         xx, yy, uu, vv = self.meshgrid()
-        self.pos_grid = torch.cat([xx.unsqueeze(0), yy.unsqueeze(0), torch.zeros(1, self.height, self.width)]).permute(1, 2, 0)
+        # self.pos_grid = torch.cat([xx.unsqueeze(0), yy.unsqueeze(0), torch.zeros(1, self.height, self.width)]).permute(1, 2, 0)
+        self.pos_grid = torch.cat([xx.unsqueeze(0), yy.unsqueeze(0), torch.zeros(1, self.width, self.height)]).permute(1, 2, 0)
         self.uv_grid = torch.cat([uu.unsqueeze(0), vv.unsqueeze(0)]).permute(1, 2, 0)
 
         self.pos = self.pos_grid.flatten(0, 1)  # (num_vertices, 3)
@@ -31,21 +29,18 @@ class GridMesh:
         self.num_vertices = self.pos.shape[0]
         self.num_triangles = self.tri.shape[0]
 
-        self.area = 1 / 2 * (self.side_length ** 2) * torch.ones(self.num_triangles) # (num_triangles, )
+        self.area = 1 / 2 * (self.side_length_h * self.side_length_w) * torch.ones(self.num_triangles) # (num_triangles, )
 
         identity = torch.eye(2).expand(self.num_triangles, -1, -1)  # (num_triangles, 2, 2)
-        self.metric_tensor = (self.side_length ** 2) * identity
-        self.metric_tensor_inv = 1 / (self.side_length ** 2) * identity
-
-        # self.v1, self.v2, self.v3, self.v4, self.edge_tri = self.get_adjacent_triangles()
-        # self.edge_length, self.area_edge = self.get_adjacent_quantity()
+        self.metric_tensor = (self.side_length_h * self.side_length_w) * identity
+        self.metric_tensor_inv = 1 / (self.side_length_h * self.side_length_w) * identity
 
 
     def meshgrid(self):
-
-        x_range = self.side_length * torch.linspace(1, 0, self.width)
-        y_range = self.side_length * torch.linspace(1, 0, self.height)
-
+        # x_range = self.side_length * torch.linspace(1, 0, self.width)
+        # y_range = self.side_length * torch.linspace(1, 0, self.height)
+        x_range = self.side_length_w * torch.linspace(1, 0, self.width)
+        y_range = self.side_length_h * torch.linspace(1, 0, self.height)
         xx, yy = torch.meshgrid(x_range, y_range, indexing='ij')
 
         u_range = torch.linspace(1, 0, self.width)
@@ -57,13 +52,14 @@ class GridMesh:
 
     def generate_triangles(self):
         tri = []
-        for i in range(self.height - 1):
-            for j in range(self.height - 1):
+        for i in range(self.width - 1):  # vertical
+            for j in range(self.height - 1):  # horizontal
                 bottom_left = i * self.height + j
                 bottom_right = i * self.height + (j + 1)
                 top_left = (i + 1) * self.height + j
                 top_right = (i + 1) * self.height + (j + 1)
-                # Split the square element into two triangles
+
+                # Split each quad into two triangles
                 tri.append([bottom_left, bottom_right, top_left])
                 tri.append([top_right, top_left, bottom_right])
 
@@ -72,14 +68,13 @@ class GridMesh:
 
     def generate_quads(self):
         quad = []
-        for i in range(self.height - 1):
+        for i in range(self.width - 1):
             for j in range(self.height - 1):
                 bottom_left = i * self.height + j
                 bottom_right = i * self.height + (j + 1)
                 top_left = (i + 1) * self.height + j
                 top_right = (i + 1) * self.height + (j + 1)
                 # Split the square element into two triangles
-                # quad.append([bottom_left, bottom_right, top_right, top_left])
                 quad.append([bottom_left, top_left, top_right, bottom_right])
 
         return torch.tensor(quad)
@@ -112,26 +107,6 @@ class GridMesh:
 
     def get_element_quantity(self):
         return self.area, self.metric_tensor_inv, self.tri
-
-    # def get_adjacent_triangles(self):
-    #     # Ref: https://libigl.github.io/libigl-python-bindings/igl_docs/#edge_flaps
-    #     edge, unique_edge, edge_tri, edge_vert = igl.edge_flaps(self.tri.cpu().numpy())
-    #     edge, unique_edge, edge_tri, edge_vert = map(
-    #         lambda x: torch.from_numpy(x).to(self.tri.device),
-    #         [edge, unique_edge, edge_tri, edge_vert]
-    #     )
-    #
-    #     interior = (edge_tri[:, 0] != -1) * (edge_tri[:, 1] != -1)
-    #     edge = edge[interior]
-    #     edge_tri = edge_tri[interior]
-    #     edge_vert = edge_vert[interior]
-    #
-    #     # Four points of the two adjacent triangles
-    #     v1, v2 = edge[:, 0], edge[:, 1]
-    #     v3 = self.tri[edge_tri[:, 0], edge_vert[:, 0]]
-    #     v4 = self.tri[edge_tri[:, 1], edge_vert[:, 1]]
-    #
-    #     return v1, v2, v3, v4, edge_tri
 
     def get_edge_length(self):
         return (self.pos[self.v1] - self.pos[self.v2]).norm(dim=-1)
@@ -199,21 +174,31 @@ class GridMesh:
 
 
 
-
 if __name__ == "__main__":
     #### QUAD MESH
-    resolution = 100
-    grid = GridMesh(height=resolution, width=resolution, side_length=1)
-    save_path = f"/Users/ruochen/Documents/liris_code/datasets/pgsft/template_grid_{resolution}.obj"
-    grid.save_quad_obj(save_path)
-    print('saved to:', save_path)
+    # resolution = 100
+    # grid = GridMesh(height=resolution, width=resolution, side_length_h=1, side_length_w=1)
+    # save_path = f"../datasets/pgsft/template_grid_{resolution}_debug.obj"
+    # grid.save_quad_obj(save_path)
+    # print('saved to:', save_path)
 
 
     #### TRI MESH
     # resolution = 100
     # grid = GridMesh(height=resolution, width=resolution, side_length=1)
     # # print(grid.mass)
-    # save_path = f"/Users/ruochen/Documents/liris_code/Physics-guided_SfT/data/template_phisft_{resolution}.obj"
+    # save_path = f"../Physics-guided_SfT/data/template_phisft_{resolution}.obj"
     # grid.save_obj(save_path)
     # print('saved to:', save_path)
 
+
+    ### Non square mesh
+    height = 256
+    width = 32
+    side_length_h = height / 32
+    side_length_w = width / 32
+    grid = GridMesh(height=height, width=width, side_length_h=side_length_h, side_length_w=side_length_w)
+    save_path = f"../datasets/pgsft/template_grid_{height}x{width}.obj"
+    grid.save_quad_obj(save_path)
+    # grid.save_obj(save_path)
+    print('saved to:', save_path)

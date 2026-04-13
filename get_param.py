@@ -1,7 +1,6 @@
 import argparse
 import os
 from pathlib import Path
-
 import torch
 from configmypy import ConfigPipeline, YamlConfig, ArgparseConfig
 
@@ -61,25 +60,13 @@ def str2bool(v):
 
 
 def get_hyperparam(params):
-	if params.net.name == "SymmetricMetamizer":
-		return f"net {params.net}; sg: {params.symmetry_group}; hs {params.hidden_size}; dt {params.dt};"
-	if params.net.name in ("FNOVertex", "UNOVertex"):
+	if params.net.name == "FNOVertex":
 		return f"net {params.net.name}; hs {params.net.hidden_channels}; dt {params.cloth.dt};"
-	if params.net.name == "MeshGraphNets":
-		return f"net {params.net.name}; hs {params.flags.message_passing_aggregator}; mp {params.flags.message_passing_steps};"
-	if params.net.name == "MeshGraphNets2":
-		return f"net {params.net.name}; mp {params.net.message_passing_steps};"
 	return f"net {params.net.name}; hs {params.net.hidden_size}; dt {params.cloth.dt};"
 
 def get_load_hyperparam(params):
-	if params.net.name == "SymmetricMetamizer":
-		return f"net {params.net}; sg: {params.symmetry_group}; hs {params.hidden_size}; dt {params.dt};"
-	if params.net.name in ("FNOVertex", "UNOVertex"):
+	if params.net.name == "FNOVertex":
 		return f"net {params.net.name}; hs {params.net.hidden_channels}; dt {params.cloth.dt};"
-	if params.net.name == "MeshGraphNets":
-		return f"net {params.net.name}; hs {params.flags.message_passing_aggregator}; mp {params.flags.message_passing_steps};"
-	if params.net.name == "MeshGraphNets2":
-		return f"net {params.net.name}; mp {params.net.message_passing_steps};"
 	return f"net {params.net.name}; hs {params.net.hidden_size}; dt {params.cloth.dt};"
 
 cuda = torch.cuda.is_available()
@@ -106,14 +93,9 @@ def get_params():
 	pipe = ConfigPipeline(
 		[
 			YamlConfig(
-				# 'fno_vertex.yaml', config_name='local', config_folder=config_folder
-				# 'fno_vertex.yaml', config_name='local_sft', config_folder=config_folder
-				# 'uno_vertex.yaml', config_name='local', config_folder=config_folder
+				'fno_vertex.yaml', config_name='local', config_folder=config_folder
 				# 'metamizer.yaml', config_name='local', config_folder=config_folder
-				# 'mgnrp.yaml', config_name='local', config_folder=config_folder
-				# 'meshgraphnets2.yaml', config_name='local', config_folder=config_folder
 				# 'test_solver.yaml', config_name='local', config_folder=config_folder
-				'abl_optimizers.yaml', config_name='local', config_folder=config_folder
 
 	),
 			ArgparseConfig(infer_types=True, config_name=None, config_file=None),
@@ -122,7 +104,7 @@ def get_params():
 		]
 	)
 	params = pipe.read_conf()
-	# params = update_params(params)
+	params = update_params(params)
 	return params
 
 

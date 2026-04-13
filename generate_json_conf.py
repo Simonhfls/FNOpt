@@ -1,14 +1,12 @@
 """
-Reference: https://github.com/iandlibao/meshgraphnet_rp/blob/main/generate_json_conf.py
+Code adapted from: https://github.com/iandlibao/meshgraphnet_rp/blob/main/generate_json_conf.py
 """
 import json
+import math
 import os
-
 import torch
 import numpy as np
-
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
 
 def rotate_x_dir_values(x_values, direction):
     x_values = x_values.float()
@@ -667,38 +665,63 @@ def get_motion_code(motion_traj):
         return motion_traj
 
 
-def get_path_from_gt_input(gt_input, root_path_mgnrp):
-    root_path = os.path.join(root_path_mgnrp, "input", "gt_data")
-    gt_folders = [folder for folder in os.listdir(root_path) if \
-                  os.path.isdir(os.path.join(root_path, folder))]
+def get_path_from_gt_input(gt_input, gt_data_dir):
+    gt_folders = [folder for folder in os.listdir(gt_data_dir) if \
+                  os.path.isdir(os.path.join(gt_data_dir, folder))]
     gt_path = None
     for gt_folder in gt_folders:
-        json_path = os.path.join(root_path, gt_folder, "meta.json")
+        json_path = os.path.join(gt_data_dir, gt_folder, "meta.json")
         assert (os.path.exists(json_path))
         with open(json_path, 'r') as json_file:
             json_dict = json.load(json_file)
 
         equal_flag = True
         for key, val in json_dict.items():
+
             if gt_input[key] != val:
                 equal_flag = False
                 break
 
         if equal_flag:
-            gt_path = os.path.join(root_path, gt_folder)
+            gt_path = os.path.join(gt_data_dir, gt_folder)
             break
 
     assert (gt_path is not None)
     return gt_path
 
 
+def change_sequence_speed(traj: torch.Tensor, speed_factor: float, hold_frames: int = 300) -> torch.Tensor:
+    """
+    """
+    F, V, C = traj.shape
+    last_idx = F - 1
 
+    # compute new number of frames
+    new_F = int(math.floor(last_idx / speed_factor)) + 1
+
+    device = traj.device
+    dtype = traj.dtype
+    new_traj = torch.zeros((new_F, V, C), device=device, dtype=dtype)
+
+    # bi-linear interpolation
+    for i in range(new_F):
+        t = i * speed_factor
+        t0 = int(math.floor(t))
+        t1 = t0 + 1 if t0 < last_idx else last_idx
+        alpha = t - t0
+        new_traj[i] = (1 - alpha) * traj[t0] + alpha * traj[t1]
+
+    # hold frames
+    if hold_frames > 0:
+        last_frame = new_traj[-1].unsqueeze(0)              # shape: (1, V, C)
+        hold = last_frame.repeat(hold_frames, 1, 1)         # shape: (hold_frames, V, C)
+        new_traj = torch.cat((new_traj, hold), dim=0)       # shape: (new_F+hold_frames, V, C)
+
+    return new_traj
 
 motion_traj_to_mcode = {
     "forwardBack": "fwd"
 }
-
-
 
 obj_name_to_handle_ind_list_dict = {
     "square_1024": [0, 19],

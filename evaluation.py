@@ -7,30 +7,12 @@ from generate_json_conf import get_path_from_gt_input
 from tri_to_quad_mesh import load_obj_with_uv
 
 
-def loadGroundTruth(scene_parameters, device='cpu'):
-    pathlist = [str(p) for p in sorted(pathlib.Path(scene_parameters["ground_truth_dir"]).rglob("*.pt"))]
-
-    max_n_points = 0
-    for path in pathlist:
-        temp = torch.load(path, weights_only=True).to(device)
-        if temp.shape[0] > max_n_points:
-            max_n_points = temp.shape[0]
-
-    point_clouds = torch.zeros((len(pathlist), max_n_points, temp.shape[1]), device=device)
-    point_clouds_lengths = torch.zeros(len(pathlist), dtype=torch.int64, device=device)
-    counter = 0
-    for path in pathlist:
-        temp = torch.load(path, weights_only=True).to(device)
-        point_clouds[counter, :temp.shape[0]] = temp
-        point_clouds_lengths[counter] = temp.shape[0]
-        counter += 1
-
-    return point_clouds, point_clouds_lengths
 
 def loadGroundTruthMGNRP(scene_parameters, input_data, device='cpu'):
-    gt_path = get_path_from_gt_input(input_data, scene_parameters['root_mgnrp'])
+    gt_path = get_path_from_gt_input(input_data, os.path.join(scene_parameters['gt_data_dir'], 'gt_data'))
     gt_x = torch.from_numpy(np.load(os.path.join(gt_path, "cloth_pos.npy"))).to(device)
-    _, f, _ = load_obj_with_uv(scene_parameters['mesh_file_mgn'])
+    _, f, _ = load_obj_with_uv(os.path.join(scene_parameters['gt_data_dir'], 'unity_demo', 'square_1024.obj'))
+
     f = torch.from_numpy(f).to(device)
     # sample points from the mesh
     n_points = 10000
@@ -106,12 +88,6 @@ def computeMeshDistance(gt_mesh, our_mesh, min_index, max_index, frame_wise=Fals
     return torch.mean(e3d, 0)
     # return normalized_error
 
-def computeMeshDistanceWithoutNormalization(gt_mesh, our_mesh, min_index, max_index):
-    # frame_3d_error = torch.norm(gt_mesh[min_index:max_index] - our_mesh[min_index:max_index]) / torch.norm(gt_mesh[min_index:max_index])
-    per_vertex_errors = (gt_mesh[min_index:max_index] - our_mesh[min_index:max_index]).norm(dim=2)
-    normalized_error = torch.mean(per_vertex_errors)
-
-    return normalized_error
 
 
 def savePointCloud(point_clouds, filename):

@@ -1,6 +1,3 @@
-import os
-from typing import List, Optional, Any
-
 import numpy as np
 import torch
 from utils import has_nan
@@ -8,7 +5,7 @@ from utils import has_nan
 # this script contains multistep dataset functionality to:
 # transform datasets with multiple channels into dataset with one channel (this is needed to concatenate multiple datasets with different numbers of channels)
 # concatenate multiple datasets
-# os.environ["PYTORCH_NVFUSER_DISABLE_TRITON"]="1"
+
 class DatasetToSingleChannel:
     # transform datasets with multiple channels into dataset with one channel
     # (this is needed to concatenate multiple datasets with different numbers of channels)
@@ -35,7 +32,7 @@ class DatasetToSingleChannel:
         split_hidden_states = [hs_split for hs_merged in hidden_states for hs_split in hs_merged]
         return split_grads, split_hidden_states
 
-    def ask_sft(self, last_iter=True, frame_counter=None):
+    def ask_inference(self, retain_graph=True, frame_counter=None):
         """
         ask for a batch from multi_channel_dataset. The multi channel samples are split into single channel samples.
         :return:
@@ -43,7 +40,8 @@ class DatasetToSingleChannel:
             :hidden_states: list of length batch_size * n_channels that contains the hidden_states
                             (list entries are None if corresponding hidden_states are not yet set)
         """
-        grads, hidden_states = self.multi_channel_dataset.ask_sft(last_iter=last_iter, frame_counter=frame_counter)
+        # grads, hidden_states = self.multi_channel_dataset.ask_inference(retain_graph=retain_graph, frame_counter=frame_counter)
+        grads, hidden_states = self.multi_channel_dataset.ask_inference_jit(retain_graph=retain_graph, frame_counter=frame_counter)
         self.bs, self.c, self.h, self.w = grads.shape
         split_grads = grads.reshape(self.bs*self.c,1,self.h,self.w)
         hidden_states = [[None for _ in range(self.c)] if hs is None else hs for hs in hidden_states]
@@ -64,18 +62,15 @@ class DatasetToSingleChannel:
         l = self.multi_channel_dataset.tell(merge_step,merge_hidden_states)
         return l
 
-    def tell_sft(self, step, hidden_states=None, detach_acc=False, bc_velocity=None, frame_counter=None):
+    def tell_inference(self, step, hidden_states=None, detach_acc=False, bc_velocity=None, frame_counter=None):
         merge_step = step.reshape(self.bs, self.c, self.h, self.w)
         merge_hidden_states = None if hidden_states is None else [hidden_states[i*self.c:(i+1)*self.c] for i in range(self.bs)]
-        l = self.multi_channel_dataset.tell_sft(merge_step, merge_hidden_states, detach_acc, bc_velocity, frame_counter=frame_counter)
+        l = self.multi_channel_dataset.tell_inference(merge_step, merge_hidden_states, detach_acc, bc_velocity, frame_counter=frame_counter)
         return l
 
 
 
-class DatasetConcat: # TODO
-    # transform datasets with multiple channels into dataset with one channel
-    # (this is needed to concatenate multiple datasets with different numbers of channels)
-
+class DatasetConcat: 
     def __init__(self,datasets,logger=None,names=None,steps_per_log=1):
         """
         :logger: logger to log the logarithm of the mean absolute gradients (LMAG) of the different datasets
@@ -210,7 +205,7 @@ def generate_vertex_force(h, w, simulation_frames, device='cuda', mode='multi_im
         force_val = 2.0
         for t in range(simulation_frames):
             ci = h // 2
-            cj = int(w * (t / simulation_frames))  # 从左到右滑动
+            cj = int(w * (t / simulation_frames))  # sliding from left to right
             for i in range(ci - radius, ci + radius):
                 for j in range(cj - radius, cj + radius):
                     if 0 <= i < h and 0 <= j < w:

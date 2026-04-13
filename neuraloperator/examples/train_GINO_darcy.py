@@ -69,21 +69,21 @@ if __name__ == '__main__':
     augmented_loader_test16 = torch.utils.data.DataLoader(
         augmented_dataset_test,
         batch_size=test_loaders[16].batch_size,
-        shuffle=test_loaders[16].sampler is not None,  # 保持与原始 DataLoader 一致
+        shuffle=test_loaders[16].sampler is not None,  # keep consistent with original DataLoader
         num_workers=test_loaders[16].num_workers,
         pin_memory=test_loaders[16].pin_memory
     )
 
-    base_dataset = test_loaders[32].dataset  # 原始 Dataset 对象
-    input_geom = torch.randn(32 * 32, 2)  # 示例输入
-    latent_queries = torch.rand(64, 64, 2)  # 示例潜在查询
-    output_queries = torch.rand(32 * 32, 2)  # 示例输出查询
+    base_dataset = test_loaders[32].dataset  # original Dataset object
+    input_geom = torch.randn(32 * 32, 2)  # example input
+    latent_queries = torch.rand(64, 64, 2)  # example latent queries
+    output_queries = torch.rand(32 * 32, 2)  # example output queries
     augmented_dataset_test = AugmentedDataset(base_dataset)
 
     augmented_loader_test32 = torch.utils.data.DataLoader(
         augmented_dataset_test,
         batch_size=test_loaders[32].batch_size,
-        shuffle=test_loaders[32].sampler is not None,  # 保持与原始 DataLoader 一致
+        shuffle=test_loaders[32].sampler is not None,  # keep consistent with original DataLoader
         num_workers=test_loaders[32].num_workers,
         pin_memory=test_loaders[32].pin_memory
     )

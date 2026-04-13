@@ -1,0 +1,32 @@
+{
+    "scene": "S_MGNRP",
+    "dataset_dir": "assets",
+    "mesh_file": "template_grid_32x48.obj",
+    "mesh_resolution_h": 32,
+    "mesh_resolution_w": 48,
+    "mesh_size_h": 1,
+    "mesh_size_w": 1.5,
+    "transform": {
+        "rotate": [
+            90,
+            1,
+            0,
+            0
+        ],
+        "translate": [
+            0,
+            0,
+            0
+        ]
+    },
+    "gravity": [
+        0,
+        0,
+        -9.76
+    ],
+    "handle_ind_list": [
+        0,
+        1504
+    ],
+    "gt_data_dir": "../meshgraphnet_rp/input"
+}

@@ -168,7 +168,9 @@ def gino_test_latent_queries(predict_res=16):
 
     fig.suptitle(f'Inputs, ground-truth output and prediction ({predict_res}x{predict_res}).', y=0.98)
     plt.tight_layout()
-    fig.show()
+    plt.show()
+    # fig.show()
+    pass
 
 
 if __name__ == '__main__':
@@ -223,7 +225,7 @@ if __name__ == '__main__':
     augmented_loader_test16 = torch.utils.data.DataLoader(
         augmented_dataset_test,
         batch_size=test_loaders[16].batch_size,
-        shuffle=test_loaders[16].sampler is not None,  # 保持与原始 DataLoader 一致
+        shuffle=test_loaders[16].sampler is not None,  # keep consistent with original DataLoader
         num_workers=test_loaders[16].num_workers,
         pin_memory=test_loaders[16].pin_memory
     )
@@ -235,7 +237,7 @@ if __name__ == '__main__':
     augmented_loader_test32 = torch.utils.data.DataLoader(
         augmented_dataset_test,
         batch_size=test_loaders[32].batch_size,
-        shuffle=test_loaders[32].sampler is not None,  # 保持与原始 DataLoader 一致
+        shuffle=test_loaders[32].sampler is not None,  # keep consistent with original DataLoader
         num_workers=test_loaders[32].num_workers,
         pin_memory=test_loaders[32].pin_memory
     )
@@ -250,5 +252,5 @@ if __name__ == '__main__':
 
 
     gino_test_resolution()
-    # gino_test_latent_queries(predict_res=32)
+    gino_test_latent_queries(predict_res=32)
     pass

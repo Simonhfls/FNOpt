@@ -3,12 +3,8 @@ import time
 import torch
 import datetime as dt
 from torch.utils.tensorboard import SummaryWriter
-import matplotlib
-#matplotlib.use('agg')
-#matplotlib.rcParams['agg.path.chunksize'] = 10000
 import matplotlib.pyplot as plt
 import numpy as np
-#from statsmodels.nonparametric.smoothers_lowess import lowess
 import warnings
 from natsort import natsorted
 import pickle
@@ -215,40 +211,6 @@ class Logger():
 			for i,o in enumerate(optimizer):
 				o.load_state_dict(state['optimizer{}'.format(i)])
 		
-		return datetime, index
-
-
-	def load_state_mgn2(self, model, optimizer, datetime=None, index=None, continue_datetime=False, device=None):
-		"""
-		loads state of model and optimizer
-		:model: model to load (if list: load multiple models)
-		:optimizer: optimizer to load (if list: load multiple optimizers; if None: don't load)
-		:datetime: date and time from run to load (if None: take latest folder)
-		:index: index of state to load (e.g. specific epoch) (if None: take latest index)
-		:continue_datetime: flag whether to continue on this run. Default: False
-		:return: datetime, index (helpful, if datetime / index wasn't given)
-		"""
-
-		if datetime is None:
-			for _, dirs, _ in os.walk('Logger/{}/'.format(self.name)):
-				datetime = sorted(dirs)[-1]
-				if datetime == self.datetime:
-					datetime = sorted(dirs)[-2]
-				break
-
-		if continue_datetime:
-			# CODO: remove generated directories...
-			os.rmdir()
-			self.datetime = datetime
-
-		if index is None:
-			for _, _, files in os.walk('Logger/{}/{}/states/'.format(self.name, datetime)):
-				index = os.path.splitext(natsorted(files)[-1])[0]
-				break
-
-		path = 'Logger/{}/{}/states/{}.state'.format(self.name, datetime, index)
-		model.model.load_model(path)
-
 		return datetime, index
 
 

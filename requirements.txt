@@ -1,0 +1,8 @@
+configmypy==0.2.0
+matplotlib==3.9.2
+natsort==8.4.0
+numpy==2.0.2
+tqdm==4.66.5
+trimesh==4.6.11
+wandb==0.19.1
+tensorboard==2.17.1

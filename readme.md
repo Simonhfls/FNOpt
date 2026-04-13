@@ -1,92 +1,71 @@
-## Meta-FNO
+# FNOpt: Resolution-Agnostic, Self-Supervised Cloth Simulation using Meta-Optimization with Fourier Neural Operators
 
-The trained Meta-FNO model is available for download at:
-https://we.tl/t-ADSmTRQVzV
-
-
-After downloading the model, you can put it in the Logger/ folder. 
+This is the official repository for [FNOpt: Resolution-Agnostic, Self-Supervised Cloth Simulation using Meta-Optimization with Fourier Neural Operators](https://arxiv.org/abs/2512.05762).
 
 
-To run SfT code:
+# Abstract
+We present FNOpt, a self-supervised cloth simulation framework that formulates time integration as an optimization problem and trains a resolution-agnostic neural optimizer parameterized by a Fourier neural operator (FNO). Prior neural simulators often rely on extensive ground truth data or sacrifice fine-scale detail, and generalize poorly across resolutions and motion patterns. In contrast, FNOpt learns to simulate physically plausible cloth dynamics and achieves stable and accurate rollouts across diverse mesh resolutions and motion patterns without retraining. Trained only on a coarse grid with physics-based losses, FNOpt generalizes to finer resolutions, capturing fine-scale wrinkles and preserving rollout stability. Extensive evaluations on a benchmark cloth simulation dataset demonstrate that FNOpt outperforms prior learning-based approaches in out-of-distribution settings in both accuracy and robustness. These results position FNO-based meta-optimization as a compelling alternative to previous neural simulators for cloth, thus reducing the need for curated data and improving cross-resolution reliability.
 
-Local: Run `main_sft.py` directly.
-Note: for local run, I only use 3 frames just for debugging, otherwise loading ground truth is a bit slow.
 
-On Cluster:
-Run main_sft.py with the following command:
+# Running the code
+## Requirements
+
+- Python 3.9
+- PyTorch 2.4.1
+- CUDA (recommended for training and fast inference)
+
+## Installation
+
+### 1. Create conda environment and install dependencies
+
+In the PyTorch ecosystem, packages that compile C++/CUDA extensions (like `torch_scatter` and `pytorch3d`) require PyTorch to be installed *first*. Please run these commands sequentially:
 
 ```bash
-ppython main_sft.py --config_file=fno_vertex.yaml --config_name=e14 \
-		--inference.sft.debug 0 \
-		--inference.visualize_scaling 0 \
-		--inference.visualize_grads 0 \
-		--inference.sft.evaluate 1 \
-		--inference.material.stretching 1000 \
-		--inference.sft.lr.stretching 0.5 \
-		--inference.sft.lr.shearing 0.1 \
-		--inference.sft.lr.bending 0.005 \
-		--inference.sft.lr.external 0.05 \
-		--inference.sft.lr.vertex 0.01 \
-		--inference.sft.lc.rgb 1 \
-		--inference.sft.lc.sil 1 \
-		--inference.sft.lc.shift 0.01 \
-		--inference.sft.optimize_uv 0 \
-		--inference.sft.iterations_per_timestep 20 \
-		--inference.sft.new_frame_period 5 \
-		--inference.sft.n_epochs_opt 300
-``` 
+conda create -n fnopt python=3.9 -y
+conda activate fnopt
 
-The entire slurm file (fno_sft.sh) that can be launch by `sbatch fno_sft.sh`
-```bash
-#!/bin/bash
-#SBATCH --job-name=04b_sft_fno
-#SBATCH -A dnt@v100
-##SBATCH -A dnt@a100
-##SBATCH -C a100
-##SBATCH -C v100-32g
-#SBATCH --partition=gpu_p2,gpu_p13
-#SBATCH --ntasks=1 		     # number of MP tasks
-#SBATCH --ntasks-per-node=1          # number of MPI tasks per node
-#SBATCH --gres=gpu:1			# number of GPUs per node
-#SBATCH --cpus-per-task=10           # number of cores per tasks
-#SBATCH --hint=nomultithread         # we get physical cores not logical
-#SBATCH --distribution=block:block   # we pin the tasks on contiguous cores
-#SBATCH -t 2:00:00
-#SBATCH --qos=qos_gpu-dev
-#SBATCH --output=/lustre/fswork/projects/rech/dnt/uok26jj/liris_code/slurm/metamizer/jobmainsft.%j.out
-#SBATCH --mail-type=ALL
-#SBATCH --mail-user=ruochen.chen@ec-lyon.fr
+# 1. Install PyTorch base
+pip install torch==2.4.1 torchvision==0.19.1
 
-echo "Node: $(hostname)"
-echo "Start time: $(date '+%Y-%m-%d %H:%M:%S')"
+# 2. Install PyTorch extensions
+pip install torch_scatter "git+https://github.com/facebookresearch/pytorch3d.git" --no-build-isolation
 
-module purge
-module load pytorch-gpu/py3/2.3.0
-
-set -x
-
-
-cd /lustre/fswork/projects/rech/dnt/uok26jj/liris_code/Metamizer
-
-# e14, e11, or e16?
-
-python main_sft.py --config_file=fno_vertex.yaml --config_name=e14 \
-		--inference.sft.debug 0 \
-		--inference.visualize_scaling 0 \
-		--inference.visualize_grads 0 \
-		--inference.sft.evaluate 1 \
-		--inference.material.stretching 1000 \
-		--inference.sft.lr.stretching 0.5 \
-		--inference.sft.lr.shearing 0.1 \
-		--inference.sft.lr.bending 0.005 \
-		--inference.sft.lr.external 0.05 \
-		--inference.sft.lr.vertex 0.01 \
-		--inference.sft.lc.rgb 1 \
-		--inference.sft.lc.sil 1 \
-		--inference.sft.lc.shift 0.01 \
-		--inference.sft.optimize_uv 0 \
-		--inference.sft.iterations_per_timestep 20 \
-		--inference.sft.new_frame_period 5 \
-		--inference.sft.n_epochs_opt 300 \
-
+# 3. Install remaining dependencies
+pip install -r requirements.txt
 ```
+
+### 2. Install the `neuraloperator` package
+
+This project depends on a previous version of the [neuraloperator](https://github.com/neuraloperator/neuraloperator) library, which is included as a submodule in the `neuraloperator/` directory.
+
+```bash
+cd neuraloperator
+pip install -e .
+cd ..
+```
+
+
+## Pretrained Model
+
+The trained FNOpt model is available for download at: **[link]**
+
+After downloading, place the model checkpoint in the `Logger/` directory, preserving the folder structure.
+
+
+## Training
+
+To train the model:
+
+```bash
+python train.py --config_file fno_vertex.yaml --config_name e11
+```
+
+
+## Inference
+
+To run inference:
+
+```bash
+python main_clothnet_inference.py --config_file fno_vertex.yaml --config_name handle_e11
+```
+

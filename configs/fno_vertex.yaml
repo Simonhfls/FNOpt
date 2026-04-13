@@ -103,7 +103,7 @@ default: &DEFAULT
   # Weights and biases
   wandb: &DEFAULT_WANDB
     root_dir: './'
-    log: true
+    log: false
     group: 'fno'
 
   distributed:

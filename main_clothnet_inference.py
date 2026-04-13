@@ -5,7 +5,7 @@ import traceback
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from render_utils import setup_evaluation_logger, check_frame, generate_heatmap_video, try_acquire_lock, release_lock, \
     render_single, render_video_with_gt
-from archive.rollout import Rollout
+from rollout import Rollout
 from tri_to_quad_mesh import batch_trimesh_to_quadmesh_torch
 from motion_codes import motion_presets
 from generate_json_conf import get_path_from_gt_input

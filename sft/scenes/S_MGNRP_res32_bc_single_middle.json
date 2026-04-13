@@ -1,0 +1,44 @@
+{
+    "scene": "S_MGNRP",
+    "n_images": 49,
+    "dataset_dir": "../datasets/pgsft",
+    "mesh_file": "template_mgnrp_quad_32.obj",
+    "mesh_file_mgn": "../meshgraphnet_rp/input/unity_demo/square_1024.obj",
+    "mesh_resolution": 32,
+    "mesh_size": 1,
+    "texture_file": "S1/texture.jpg",
+    "image_files": "S1/rgbs_nvdiffrast/",
+    "mask_files": "S1/blurred_masks/",
+    "result_point_cloud_files": "evaluation/S1/ours/point_cloud_",
+    "result_chamfer_file": "evaluation/S1/chamfer_distances_ours.pt",
+    "ground_truth_dir": "S1/surfaces_32x32/",
+    "root_mgnrp": "../meshgraphnet_rp/",
+    "camera_position": [
+        0.5, -1.0, 1
+    ],
+
+    "camera_up": [
+        0.0,
+        1.0,
+        0.0
+    ],
+
+    "lower_left_corner": [
+        0,
+        0
+    ],
+    "upper_right_corner": [
+        512,
+        512
+    ],
+    "object_position": [0.5, 0.5, 0],
+    "width": 512, 
+    "height": 512,
+    "transform": {
+        "rotate":[90, 1, 0, 0],
+        "translate":[0, 0, 0]},
+    "gravity": [0, 0, -9.76],
+    "wind": {"velocity": [4, -1, 1]},
+    "handle_ind_list": [0],
+    "bc_desc": "single_corner"
+}
